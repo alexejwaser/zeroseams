@@ -31,6 +31,7 @@ export function CarouselStage(): React.ReactElement {
   const addObject = useCanvasStore((s) => s.addObject)
   const activeTool = useCanvasStore((s) => s.activeTool)
   const setActiveTool = useCanvasStore((s) => s.setActiveTool)
+  const clearContentEditMode = useCanvasStore((s) => s.clearContentEditMode)
 
   useImageDrop(containerRef)
   useUndoRedoShortcuts()
@@ -101,6 +102,7 @@ export function CarouselStage(): React.ReactElement {
             setActiveTool('select')
           } else {
             setSelected(null)
+            clearContentEditMode()
           }
         }}
       >

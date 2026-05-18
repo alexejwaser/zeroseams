@@ -24,6 +24,7 @@ interface CanvasState {
   reorderObjects: (fromId: string, toId: string, side: 'before' | 'after') => void
   undo: () => void
   redo: () => void
+  clearContentEditMode: () => void
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => {
@@ -143,6 +144,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           objects: next.objects,
           objectOrder: next.objectOrder,
         }
+      }),
+
+    clearContentEditMode: () =>
+      set((state) => {
+        const updated: Record<string, CanvasObject> = {}
+        let changed = false
+        for (const [id, obj] of Object.entries(state.objects)) {
+          if (obj.type === 'image' && obj.contentEditMode) {
+            updated[id] = { ...obj, contentEditMode: false }
+            changed = true
+          } else {
+            updated[id] = obj
+          }
+        }
+        if (!changed) return state
+        return { objects: updated }
       }),
   }
 })

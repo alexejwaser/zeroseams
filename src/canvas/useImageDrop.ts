@@ -38,14 +38,27 @@ export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): voi
           const w = Math.round(img.naturalWidth * scale)
           const h = Math.round(img.naturalHeight * scale)
 
+          const frameX = FRAME_WIDTH / 2 - w / 2
+          const frameY = FRAME_HEIGHT / 2 - h / 2
+
           addObject({
             id: crypto.randomUUID(),
             type: 'image',
             scope: 'global',
             src: dataUrl,
             backgroundRemoved: false,
-            x: FRAME_WIDTH / 2 - w / 2,
-            y: FRAME_HEIGHT / 2 - h / 2,
+            frameX,
+            frameY,
+            frameWidth: w,
+            frameHeight: h,
+            contentOffsetX: 0,
+            contentOffsetY: 0,
+            contentWidth: w,
+            contentHeight: h,
+            contentEditMode: false,
+            // keep in sync with frame for compatibility
+            x: frameX,
+            y: frameY,
             width: w,
             height: h,
             rotation: 0,

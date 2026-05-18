@@ -3,7 +3,7 @@ import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useAI } from '@/ai'
 import { useAIStore } from '@/ai'
 import type { BackgroundRemovalOperation } from '@/types/ai'
-import type { TextObject } from '@/types/canvas'
+import type { ImageObject, TextObject } from '@/types/canvas'
 
 interface NumberFieldProps {
   label: string
@@ -263,45 +263,161 @@ export function PropertiesPanel(): React.ReactElement {
           )
         })()}
 
-        {selectedObj !== null && isImage && (
-          <div style={{ padding: '12px 12px 0' }}>
-            <NumberField
-              label="X"
-              value={selectedObj.x}
-              onChange={(val) => patch({ x: val })}
-            />
-            <NumberField
-              label="Y"
-              value={selectedObj.y}
-              onChange={(val) => patch({ y: val })}
-            />
-            <NumberField
-              label="Width"
-              value={selectedObj.width}
-              min={1}
-              onChange={(val) => patch({ width: val })}
-            />
-            <NumberField
-              label="Height"
-              value={selectedObj.height}
-              min={1}
-              onChange={(val) => patch({ height: val })}
-            />
-            <NumberField
-              label="Rotation"
-              value={selectedObj.rotation}
-              onChange={(val) => patch({ rotation: val })}
-            />
-            <NumberField
-              label="Opacity"
-              value={selectedObj.opacity}
-              step={0.01}
-              min={0}
-              max={1}
-              onChange={(val) => patch({ opacity: val })}
-            />
-          </div>
-        )}
+        {selectedObj !== null && isImage && (() => {
+          const imgObj = selectedObj as ImageObject
+          const isContentMode = imgObj.contentEditMode === true
+
+          if (!isContentMode) {
+            // FRAME MODE
+            return (
+              <div style={{ padding: '12px 12px 0' }}>
+                <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                  textTransform: 'uppercase' as const, marginBottom: 6 }}>Frame</div>
+                <NumberField
+                  label="X"
+                  value={imgObj.frameX}
+                  onChange={(val) => patch({ frameX: val, x: val })}
+                />
+                <NumberField
+                  label="Y"
+                  value={imgObj.frameY}
+                  onChange={(val) => patch({ frameY: val, y: val })}
+                />
+                <NumberField
+                  label="W"
+                  value={imgObj.frameWidth}
+                  min={1}
+                  onChange={(val) => patch({ frameWidth: val, width: val })}
+                />
+                <NumberField
+                  label="H"
+                  value={imgObj.frameHeight}
+                  min={1}
+                  onChange={(val) => patch({ frameHeight: val, height: val })}
+                />
+                <NumberField
+                  label="Rotation"
+                  value={imgObj.rotation}
+                  onChange={(val) => patch({ rotation: val })}
+                />
+                <NumberField
+                  label="Opacity"
+                  value={imgObj.opacity}
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  onChange={(val) => patch({ opacity: val })}
+                />
+                <div style={{ color: '#555', fontSize: 11, marginTop: 8, marginBottom: 8 }}>
+                  ↩ Double-click image to edit content
+                </div>
+              </div>
+            )
+          }
+
+          // CONTENT EDIT MODE
+          return (
+            <div style={{ padding: '12px 12px 0' }}>
+              {/* Orange banner — full bleed */}
+              <div style={{
+                marginLeft: -12,
+                marginRight: -12,
+                marginTop: -12,
+                marginBottom: 12,
+                padding: '6px 12px',
+                background: '#ff7043',
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}>
+                Content Edit Mode
+              </div>
+
+              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                textTransform: 'uppercase' as const, marginBottom: 6 }}>Content</div>
+              <NumberField
+                label="Offset X"
+                value={imgObj.contentOffsetX}
+                onChange={(val) => patch({ contentOffsetX: val })}
+              />
+              <NumberField
+                label="Offset Y"
+                value={imgObj.contentOffsetY}
+                onChange={(val) => patch({ contentOffsetY: val })}
+              />
+              <NumberField
+                label="Width"
+                value={imgObj.contentWidth}
+                min={1}
+                onChange={(val) => patch({ contentWidth: val })}
+              />
+              <NumberField
+                label="Height"
+                value={imgObj.contentHeight}
+                min={1}
+                onChange={(val) => patch({ contentHeight: val })}
+              />
+
+              <button
+                onClick={() => patch({
+                  frameWidth: imgObj.contentWidth,
+                  frameHeight: imgObj.contentHeight,
+                  width: imgObj.contentWidth,
+                  height: imgObj.contentHeight,
+                  contentOffsetX: 0,
+                  contentOffsetY: 0,
+                })}
+                style={{
+                  width: '100%',
+                  height: 30,
+                  background: '#333',
+                  color: '#fff',
+                  border: '1px solid #555',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  marginBottom: 6,
+                }}
+              >
+                Fit frame to content
+              </button>
+
+              <button
+                onClick={() => {
+                  const scale = Math.max(
+                    imgObj.frameWidth / imgObj.contentWidth,
+                    imgObj.frameHeight / imgObj.contentHeight
+                  )
+                  const newW = imgObj.contentWidth * scale
+                  const newH = imgObj.contentHeight * scale
+                  patch({
+                    contentWidth: newW,
+                    contentHeight: newH,
+                    contentOffsetX: (imgObj.frameWidth - newW) / 2,
+                    contentOffsetY: (imgObj.frameHeight - newH) / 2,
+                  })
+                }}
+                style={{
+                  width: '100%',
+                  height: 30,
+                  background: '#333',
+                  color: '#fff',
+                  border: '1px solid #555',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  marginBottom: 6,
+                }}
+              >
+                Fill frame with content
+              </button>
+
+              <div style={{ color: '#888', fontSize: 11, marginTop: 8, marginBottom: 8 }}>
+                Click outside to exit content mode
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Spacer pushes AI Tools to bottom */}
         <div style={{ flex: 1 }} />

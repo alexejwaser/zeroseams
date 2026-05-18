@@ -43,6 +43,27 @@ export interface ImageObject extends BaseCanvasObject {
   backgroundRemoved: boolean
   /** Original src before any AI processing */
   originalSrc?: string
+
+  // Note: x/y/width/height from BaseCanvasObject are kept in sync with
+  // frameX/frameY/frameWidth/frameHeight for compatibility with shared code
+  // (export, layer panel, etc.). Always read/write the frame fields below
+  // when working with image-specific layout logic.
+
+  // --- Frame (clipping viewport — single-click selects/moves this) ---
+  frameX: number
+  frameY: number
+  frameWidth: number
+  frameHeight: number
+
+  // --- Content (image inside the frame) ---
+  contentOffsetX: number
+  contentOffsetY: number
+  contentWidth: number
+  contentHeight: number
+
+  // --- Edit mode ---
+  /** When true, transformer targets the image content rather than the frame */
+  contentEditMode: boolean
 }
 
 export interface TextObject extends BaseCanvasObject {
