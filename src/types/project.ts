@@ -1,0 +1,46 @@
+import type { CanvasObject } from './canvas'
+
+// CarouselProject — the top-level save/load unit for a Zero Seams project.
+
+export type FrameRatio = 'square' | 'portrait'
+
+/** Pixel dimensions of a single Instagram frame */
+export interface FrameDimensions {
+  width: 1080
+  height: 1080 | 1350
+}
+
+/** One Instagram slide in the carousel */
+export interface Frame {
+  /** Zero-based index in the carousel sequence */
+  index: number
+  /** Human-readable label, e.g. "Slide 1" */
+  label: string
+  /** Per-frame background color override (inherits project default if null) */
+  backgroundColor: string | null
+}
+
+export interface CarouselProject {
+  id: string
+  name: string
+
+  // --- Canvas layout ---
+  ratio: FrameRatio
+  dimensions: FrameDimensions
+  frameCount: number
+  frames: Frame[]
+
+  /** Background color for the entire canvas */
+  backgroundColor: string
+
+  // --- Objects ---
+  /** All canvas objects keyed by id for O(1) lookup */
+  objects: Record<string, CanvasObject>
+  /** Render order (bottom → top) */
+  objectOrder: string[]
+
+  // --- History ---
+  createdAt: string   // ISO 8601
+  updatedAt: string   // ISO 8601
+  version: number     // incremented on every save
+}
