@@ -7,6 +7,8 @@ import { useCanvasStore } from './useCanvasStore'
 import { FrameGuides } from './FrameGuides'
 import { CanvasImageNode } from './CanvasImageNode'
 import { useImageDrop } from './useImageDrop'
+import { useUndoRedoShortcuts } from './useUndoRedoShortcuts'
+import { useAutosave } from './useAutosave'
 export { exportFrames } from './exportFrames'
 
 // Module-level mutable reference so external callers can access the stage
@@ -27,6 +29,8 @@ export function CarouselStage(): React.ReactElement {
   const frameCount = useCanvasStore((s) => s.frameCount)
 
   useImageDrop(containerRef)
+  useUndoRedoShortcuts()
+  useAutosave()
 
   useEffect(() => {
     _stageInstance = stageRef.current

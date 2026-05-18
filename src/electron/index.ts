@@ -1,6 +1,11 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
-import { writeFile } from 'fs/promises'
+import { writeFile, readFile, readdir, stat, mkdir } from 'fs/promises'
+import { homedir } from 'os'
+
+function getZeroSeamsDir(): string {
+  return join(homedir(), 'Documents', 'ZeroSeams')
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -39,6 +44,62 @@ ipcMain.handle(
     }
   },
 )
+
+ipcMain.handle(
+  'autosave-project',
+  async (_event, { filename, json }: { filename: string; json: string }) => {
+    const dir = getZeroSeamsDir()
+    try {
+      await mkdir(dir, { recursive: true })
+      const filePath = join(dir, `${filename}.zeroseams`)
+      await writeFile(filePath, json, 'utf-8')
+      console.log(`[main] autosaved → ${filePath}`)
+      return { success: true, filePath }
+    } catch (error) {
+      console.error(`[main] autosave-project error:`, error)
+      return { success: false, error: String(error) }
+    }
+  },
+)
+
+ipcMain.handle('open-project', async () => {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    filters: [{ name: 'Zero Seams Project', extensions: ['zeroseams'] }],
+    properties: ['openFile'],
+  })
+  if (canceled || filePaths.length === 0) return { success: false }
+  try {
+    const json = await readFile(filePaths[0], 'utf-8')
+    return { success: true, json }
+  } catch (error) {
+    console.error(`[main] open-project error:`, error)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('list-recent-projects', async () => {
+  const dir = getZeroSeamsDir()
+  try {
+    const entries = await readdir(dir)
+    const zeroseamsFiles = entries.filter((name) => name.endsWith('.zeroseams'))
+    const files = await Promise.all(
+      zeroseamsFiles.map(async (name) => {
+        const filePath = join(dir, name)
+        const stats = await stat(filePath)
+        return {
+          name,
+          path: filePath,
+          modifiedAt: stats.mtime.toISOString(),
+        }
+      }),
+    )
+    return { files }
+  } catch (error) {
+    // Directory doesn't exist yet
+    return { files: [] }
+  }
+})
 
 app.whenReady().then(createWindow)
 

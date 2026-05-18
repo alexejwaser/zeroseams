@@ -20,6 +20,7 @@ export function CanvasImageNode({
   const imageRef = useRef<Konva.Image>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const updateObject = useCanvasStore((s) => s.updateObject)
+  const commitUpdate = useCanvasStore((s) => s.commitUpdate)
 
   useEffect(() => {
     const tr = transformerRef.current
@@ -58,7 +59,7 @@ export function CanvasImageNode({
           })
         }}
         onDragEnd={(e) => {
-          updateObject(obj.id, {
+          commitUpdate(obj.id, {
             x: e.target.x(),
             y: e.target.y(),
           })
@@ -75,7 +76,7 @@ export function CanvasImageNode({
         }}
         onTransformEnd={(e) => {
           const node = e.target as Konva.Image
-          updateObject(obj.id, {
+          commitUpdate(obj.id, {
             x: node.x(),
             y: node.y(),
             scaleX: node.scaleX(),

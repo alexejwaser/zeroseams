@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
+import { useSaveStatusStore, type SaveStatus } from './useSaveStatusStore'
 
 type ActiveTool = 'select' | 'text' | 'shape'
 
@@ -11,10 +12,40 @@ const TOOL_LABELS: Record<ActiveTool, string> = {
 
 const TOOLS: ActiveTool[] = ['select', 'text', 'shape']
 
+function SaveStatusPill({ status }: { status: SaveStatus }): React.ReactElement | null {
+  if (status === 'idle') return null
+
+  const config: Record<Exclude<SaveStatus, 'idle'>, { text: string; color: string }> = {
+    saving: { text: 'Saving…', color: '#aaa' },
+    saved: { text: '✓ Saved', color: '#4c4' },
+    error: { text: '⚠ Save failed', color: '#f55' },
+  }
+
+  const { text, color } = config[status as Exclude<SaveStatus, 'idle'>]
+
+  return (
+    <span
+      style={{
+        fontSize: 12,
+        color,
+        whiteSpace: 'nowrap',
+        userSelect: 'none',
+      }}
+    >
+      {text}
+    </span>
+  )
+}
+
 export function Toolbar(): React.ReactElement {
   const [activeTool, setActiveTool] = useState<ActiveTool>('select')
   const frameCount = useCanvasStore((s) => s.frameCount)
   const setFrameCount = useCanvasStore((s) => s.setFrameCount)
+  const past = useCanvasStore((s) => s.past)
+  const future = useCanvasStore((s) => s.future)
+  const undo = useCanvasStore((s) => s.undo)
+  const redo = useCanvasStore((s) => s.redo)
+  const saveStatus = useSaveStatusStore((s) => s.status)
 
   function handleToolClick(tool: ActiveTool): void {
     setActiveTool(tool)
@@ -27,6 +58,23 @@ export function Toolbar(): React.ReactElement {
   function handlePlus(): void {
     setFrameCount(frameCount + 1)
   }
+
+  const undoDisabled = past.length === 0
+  const redoDisabled = future.length === 0
+
+  const historyButtonStyle = (disabled: boolean): React.CSSProperties => ({
+    padding: '4px 14px',
+    height: 30,
+    background: '#333',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 4,
+    cursor: disabled ? 'default' : 'pointer',
+    fontSize: 13,
+    fontWeight: 'normal',
+    opacity: disabled ? 0.35 : 1,
+    transition: 'opacity 0.15s',
+  })
 
   return (
     <div
@@ -55,7 +103,7 @@ export function Toolbar(): React.ReactElement {
         Zero Seams
       </div>
 
-      {/* Center: tool buttons */}
+      {/* Center: undo/redo + tool buttons */}
       <div
         style={{
           flex: 1,
@@ -64,6 +112,23 @@ export function Toolbar(): React.ReactElement {
           gap: 4,
         }}
       >
+        <button
+          onClick={undo}
+          disabled={undoDisabled}
+          style={historyButtonStyle(undoDisabled)}
+        >
+          ↩ Undo
+        </button>
+        <button
+          onClick={redo}
+          disabled={redoDisabled}
+          style={historyButtonStyle(redoDisabled)}
+        >
+          ↪ Redo
+        </button>
+
+        <div style={{ width: 8 }} />
+
         {TOOLS.map((tool) => (
           <button
             key={tool}
@@ -86,7 +151,7 @@ export function Toolbar(): React.ReactElement {
         ))}
       </div>
 
-      {/* Right: frame count control */}
+      {/* Right: frame count control + save status */}
       <div
         style={{
           display: 'flex',
@@ -148,6 +213,18 @@ export function Toolbar(): React.ReactElement {
         >
           +
         </button>
+
+        {/* Save status pill */}
+        <div
+          style={{
+            minWidth: 80,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <SaveStatusPill status={saveStatus} />
+        </div>
       </div>
     </div>
   )
