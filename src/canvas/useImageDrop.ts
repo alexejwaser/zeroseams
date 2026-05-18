@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
 import type React from 'react'
 import { useCanvasStore } from './useCanvasStore'
-import { FRAME_WIDTH, FRAME_HEIGHT } from './constants'
+import { FRAME_WIDTH } from './constants'
 
 export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): void {
   const addObject = useCanvasStore((s) => s.addObject)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
+  const frameHeight = useCanvasStore((s) => s.frameHeight)
 
   useEffect(() => {
     const container = containerRef.current
@@ -39,7 +40,7 @@ export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): voi
           const h = Math.round(img.naturalHeight * scale)
 
           const frameX = FRAME_WIDTH / 2 - w / 2
-          const frameY = FRAME_HEIGHT / 2 - h / 2
+          const frameY = frameHeight / 2 - h / 2
 
           addObject({
             id: crypto.randomUUID(),
@@ -84,5 +85,5 @@ export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): voi
     }
     // objectOrder.length changes as objects are added; re-register to capture latest zIndex
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef, addObject, objectOrder.length])
+  }, [containerRef, addObject, objectOrder.length, frameHeight])
 }

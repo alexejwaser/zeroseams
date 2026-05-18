@@ -1,21 +1,27 @@
 import React, { useRef, useEffect } from 'react'
-import { Text as KonvaText, Transformer } from 'react-konva'
+import { Text as KonvaText, Rect, Transformer } from 'react-konva'
 import type Konva from 'konva'
 import type { TextObject } from '@/types/canvas'
 import { CANVAS_SCALE } from './constants'
 import { useCanvasStore } from './useCanvasStore'
+import { useSnapGuides } from './useSnapGuides'
+import type { SnapGuide } from './useSnapGuides'
 
 interface CanvasTextNodeProps {
   obj: TextObject
   isSelected: boolean
   onSelect: () => void
+  onGuidesChange: (guides: SnapGuide[]) => void
 }
 
-export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProps): React.ReactElement {
+export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: CanvasTextNodeProps): React.ReactElement {
   const textRef = useRef<Konva.Text>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const updateObject = useCanvasStore((s) => s.updateObject)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+  const selectedIds = useCanvasStore((s) => s.selectedIds)
+  const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const { computeSnap } = useSnapGuides()
 
   // Wire transformer when selected
   useEffect(() => {
@@ -24,6 +30,13 @@ export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProp
     if (!tr || !node) return
     if (isSelected) {
       tr.nodes([node])
+      if (obj.locked) {
+        tr.enabledAnchors([])
+        tr.rotateEnabled(false)
+      } else {
+        tr.enabledAnchors(['top-left', 'top-right', 'bottom-left', 'bottom-right'])
+        tr.rotateEnabled(true)
+      }
       tr.getLayer()?.batchDraw()
     } else {
       tr.nodes([])
@@ -33,17 +46,21 @@ export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProp
       // the two deferred repaints coalesce or resolve in the wrong order.
       tr.getLayer()?.draw()
     }
-  }, [isSelected])
+  }, [isSelected, obj.locked])
 
   // Inline editing on double-click
   function handleDblClick(): void {
+    if (obj.locked) return
     const node = textRef.current
     if (!node) return
     const stage = node.getStage()
     if (!stage) return
 
+    // Capture as non-null const so the finish() closure can reference it safely
+    const textNode = node
+
     // Get absolute position of the text node on screen
-    const absPos = node.getAbsolutePosition()
+    const absPos = textNode.getAbsolutePosition()
     const stageBox = stage.container().getBoundingClientRect()
 
     // getAbsolutePosition() already applies the stage scale, so no further scaling needed
@@ -51,8 +68,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProp
     const screenY = stageBox.top + absPos.y
 
     // Hide the node
-    node.visible(false)
-    node.getLayer()?.batchDraw()
+    textNode.visible(false)
+    textNode.getLayer()?.batchDraw()
 
     // Create textarea
     const textarea = document.createElement('textarea')
@@ -84,8 +101,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProp
     function finish(): void {
       const newText = textarea.value
       document.body.removeChild(textarea)
-      node.visible(true)
-      node.getLayer()?.batchDraw()
+      textNode.visible(true)
+      textNode.getLayer()?.batchDraw()
       if (newText !== obj.text) {
         commitUpdate(obj.id, { text: newText })
       }
@@ -99,8 +116,28 @@ export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProp
     })
   }
 
+  // Show multi-select outline when in selectedIds but not the primary selected
+  const isInMultiSelect = selectedIds.includes(obj.id) && !isSelected
+
   return (
     <>
+      {/* Multi-select outline rect (rendered behind text) */}
+      {isInMultiSelect && (
+        <Rect
+          x={obj.x}
+          y={obj.y}
+          width={obj.width * obj.scaleX}
+          height={obj.height * obj.scaleY}
+          rotation={obj.rotation}
+          fill="transparent"
+          stroke="#0096ff"
+          strokeWidth={1}
+          strokeScaleEnabled={false}
+          perfectDrawEnabled={false}
+          listening={false}
+        />
+      )}
+
       <KonvaText
         ref={textRef}
         x={obj.x}
@@ -120,13 +157,32 @@ export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProp
         letterSpacing={obj.letterSpacing}
         lineHeight={obj.lineHeight}
         draggable={!obj.locked}
-        onClick={onSelect}
+        onClick={(e) => {
+          if (e.evt.shiftKey) {
+            addToSelection(obj.id)
+          } else {
+            onSelect()
+          }
+        }}
         onTap={onSelect}
         onDblClick={handleDblClick}
         onDragMove={(e) => {
-          updateObject(obj.id, { x: e.target.x(), y: e.target.y() })
+          const dragNode = e.target as Konva.Text
+          const rawX = dragNode.x()
+          const rawY = dragNode.y()
+
+          const { x: snappedX, y: snappedY, guides } = computeSnap(
+            { x: rawX, y: rawY, width: obj.width * obj.scaleX, height: obj.height * obj.scaleY },
+            obj.id,
+          )
+
+          dragNode.x(snappedX)
+          dragNode.y(snappedY)
+          onGuidesChange(guides)
+          updateObject(obj.id, { x: snappedX, y: snappedY })
         }}
         onDragEnd={(e) => {
+          onGuidesChange([])
           commitUpdate(obj.id, { x: e.target.x(), y: e.target.y() })
         }}
         onTransform={(e) => {

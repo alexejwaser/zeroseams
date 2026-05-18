@@ -15,7 +15,7 @@ Think: SCRL app simplicity + Photoshop-level control.
 
 ## Core Concepts (never break these)
 - Canvas = one long surface, N frames wide
-- A "frame" is one Instagram slide (1080x1080 or 1080x1350)
+- A "frame" is one Instagram slide — 1080×1080 (square) or 1080×1350 (portrait); ratio controlled by `ratio` in store
 - Objects are either "global" (span canvas freely) or "pinned" (locked to a frame)
 - Export = slice canvas at frame boundaries → array of PNGs
 
@@ -57,6 +57,54 @@ The Transformer is always a sibling of the Group, never inside it. The Rect (not
 - Content mode: orange banner + contentOffset/size fields + "Fit frame" and "Fill frame" buttons
 
 **Exit content mode:** clicking stage background calls `clearContentEditMode()` (store action) + `setSelected(null)`
+
+## Multi-Select Model (sprint 9)
+The store holds two parallel selection concepts — never collapse these:
+
+- `selectedId: string | null` — the **primary** selection; drives the Properties Panel (single-object props)
+- `selectedIds: string[]` — the **group** selection; drives align/distribute and multi-select highlight
+
+**Rules:**
+- `setSelected(id)` sets both: `selectedId = id`, `selectedIds = [id]` (or both null/empty)
+- `addToSelection(id)` (shift+click) appends to `selectedIds`; sets `selectedId` only when coming from empty selection
+- When an object is removed, it is purged from both fields
+- Align/distribute reads `selectedIds`; Properties Panel reads `selectedId`
+
+**Align & Distribute** (requires selectedIds.length ≥ 2):
+- 6 align anchors: `'left'|'right'|'top'|'bottom'|'centerH'|'centerV'`
+- 2 distribute axes: `'horizontal'|'vertical'` (requires ≥ 3 objects)
+- Both push a single history snapshot via batch update in one `set()` call
+- Image objects use `frameX/frameY` (not `x/y`) as the geometry source for bbox calculation
+
+## Snap System (sprint 9)
+`src/canvas/useSnapGuides.ts` — pure logic, no Konva:
+- `computeSnap(box, allObjects, frameCount, frameWidth, frameHeight, threshold)` — returns snapped `{x, y}` and `SnapGuide[]`
+- Snap targets: every frame's left/center/right edges (vertical), canvas top/center/bottom (horizontal), every other object's edges and centers
+- Threshold: `SNAP_THRESHOLD = 8` canvas pixels
+- `useSnapGuides()` hook returns a bound `computeSnap(box, excludeId)` that reads store state
+
+`src/canvas/SnapGuides.tsx` — renders `SnapGuide[]` as Konva Lines on a non-listening layer:
+- `#ff3b5c` for frame snaps, `#0096ff` for object snaps
+- Mounted as Layer 3 in CarouselStage; `activeGuides` state lives in CarouselStage
+- Nodes call `onGuidesChange(guides)` on drag move, `onGuidesChange([])` on drag end
+
+## Object Locking (sprint 9)
+`locked: boolean` on `BaseCanvasObject` is now fully enforced:
+- **Canvas**: when `obj.locked && isSelected`, Transformer attaches with `enabledAnchors=[]` + `rotateEnabled=false` — shows selection box, no handles. Drag is blocked (`draggable={!obj.locked}`). Double-click into content edit mode is blocked for both images and text.
+- **UI**: LayerPanel shows a lock toggle icon per row. `toggleLock(id)` pushes undo history.
+- Properties Panel still shows read-only values when locked (numeric edits are not blocked at store level by design).
+
+## Canvas Background & Ratio (sprint 9)
+`frameHeight` is **dynamic** — stored in `useCanvasStore`, not a constant:
+- `ratio: 'square' | 'portrait'` controls `frameHeight`: square=1080, portrait=1350
+- `FRAME_HEIGHT` constant was removed from `constants.ts` — always read from store
+- `backgroundColor: string` — canvas-wide default background (#ffffff initially)
+- `frames: Frame[]` — per-frame metadata; `Frame.backgroundColor: string | null` overrides the canvas default (null = inherit)
+- All four fields (`ratio`, `frameHeight`, `frames`, `backgroundColor`, `frameCount`) are included in `HistorySnapshot` and restored on undo/redo
+
+**Ratio toggle**: `[1:1]` / `[4:5]` buttons in Toolbar. `setRatio(r)` pushes history.
+**Per-frame BG**: Properties Panel "Canvas" section (no-selection state) has canvas-wide + per-frame color pickers.
+**Export**: `exportFrames()` accepts `frameHeight` as a parameter — output is 2×frameHeight pixels tall.
 
 ## Domain Parallel Patterns
 When implementing across domains, spawn parallel agents:

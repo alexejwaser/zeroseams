@@ -1,12 +1,14 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { Stage, Layer } from 'react-konva'
 import type Konva from 'konva'
 import type { ImageObject, TextObject } from '@/types/canvas'
-import { FRAME_WIDTH, FRAME_HEIGHT, CANVAS_SCALE } from './constants'
+import { FRAME_WIDTH, CANVAS_SCALE } from './constants'
 import { useCanvasStore } from './useCanvasStore'
 import { FrameGuides } from './FrameGuides'
 import { CanvasImageNode } from './CanvasImageNode'
 import { CanvasTextNode } from './CanvasTextNode'
+import { SnapGuides } from './SnapGuides'
+import type { SnapGuide } from './useSnapGuides'
 import { useImageDrop } from './useImageDrop'
 import { useUndoRedoShortcuts } from './useUndoRedoShortcuts'
 import { useAutosave } from './useAutosave'
@@ -28,11 +30,17 @@ export function CarouselStage(): React.ReactElement {
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const selectedId = useCanvasStore((s) => s.selectedId)
   const setSelected = useCanvasStore((s) => s.setSelected)
+  const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
   const frameCount = useCanvasStore((s) => s.frameCount)
+  const frameHeight = useCanvasStore((s) => s.frameHeight)
+  const frames = useCanvasStore((s) => s.frames)
+  const backgroundColor = useCanvasStore((s) => s.backgroundColor)
   const addObject = useCanvasStore((s) => s.addObject)
   const activeTool = useCanvasStore((s) => s.activeTool)
   const setActiveTool = useCanvasStore((s) => s.setActiveTool)
   const clearContentEditMode = useCanvasStore((s) => s.clearContentEditMode)
+
+  const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([])
 
   useImageDrop(containerRef)
   useUndoRedoShortcuts()
@@ -47,7 +55,7 @@ export function CarouselStage(): React.ReactElement {
   }, [])
 
   const canvasWidth = frameCount * FRAME_WIDTH * CANVAS_SCALE
-  const canvasHeight = FRAME_HEIGHT * CANVAS_SCALE
+  const canvasHeight = frameHeight * CANVAS_SCALE
 
   return (
     <div
@@ -104,13 +112,20 @@ export function CarouselStage(): React.ReactElement {
             setActiveTool('select')
           } else {
             setSelected(null)
+            setSelectedIds([])
             clearContentEditMode()
+            setActiveGuides([])
           }
         }}
       >
         {/* Layer 1: background + guides */}
         <Layer name="guides" listening={false}>
-          <FrameGuides frameCount={frameCount} />
+          <FrameGuides
+            frameCount={frameCount}
+            frames={frames}
+            frameHeight={frameHeight}
+            backgroundColor={backgroundColor}
+          />
         </Layer>
 
         {/* Layer 2: objects */}
@@ -125,6 +140,7 @@ export function CarouselStage(): React.ReactElement {
                   obj={obj as ImageObject}
                   isSelected={selectedId === id}
                   onSelect={() => setSelected(id)}
+                  onGuidesChange={setActiveGuides}
                 />
               )
             }
@@ -135,11 +151,21 @@ export function CarouselStage(): React.ReactElement {
                   obj={obj as TextObject}
                   isSelected={selectedId === id}
                   onSelect={() => setSelected(id)}
+                  onGuidesChange={setActiveGuides}
                 />
               )
             }
             return null // other types TBD
           })}
+        </Layer>
+
+        {/* Layer 3: snap guide lines (non-listening) */}
+        <Layer name="snap-guides" listening={false}>
+          <SnapGuides
+            guides={activeGuides}
+            totalWidth={frameCount * FRAME_WIDTH}
+            totalHeight={frameHeight}
+          />
         </Layer>
       </Stage>
     </div>

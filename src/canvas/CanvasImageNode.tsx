@@ -4,14 +4,17 @@ import useImage from 'use-image'
 import type Konva from 'konva'
 import type { ImageObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
+import { useSnapGuides } from './useSnapGuides'
+import type { SnapGuide } from './useSnapGuides'
 
 interface CanvasImageNodeProps {
   obj: ImageObject
   isSelected: boolean
   onSelect: () => void
+  onGuidesChange: (guides: SnapGuide[]) => void
 }
 
-export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodeProps): React.ReactElement | null {
+export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: CanvasImageNodeProps): React.ReactElement | null {
   const [loadedImage] = useImage(obj.src)
 
   // Hold the last successfully loaded HTMLImageElement so the component never
@@ -33,6 +36,9 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
   // with keepRatio=false as base, holding Shift toggles it to true automatically.
   const cmdHeldRef = useRef(false)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+  const selectedIds = useCanvasStore((s) => s.selectedIds)
+  const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const { computeSnap } = useSnapGuides()
 
   // Re-run when image loads so transformer can attach on first select.
   useEffect(() => {
@@ -45,9 +51,18 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
       if (obj.contentEditMode) {
         tr.nodes([img])
         tr.borderStroke('#ff7043')
+        tr.enabledAnchors(['top-left', 'top-center', 'top-right', 'middle-right', 'bottom-right', 'bottom-center', 'bottom-left', 'middle-left'])
+        tr.rotateEnabled(true)
+      } else if (obj.locked) {
+        tr.nodes([frameRect])
+        tr.borderStroke('#0096ff')
+        tr.enabledAnchors([])
+        tr.rotateEnabled(false)
       } else {
         tr.nodes([frameRect])
         tr.borderStroke('#0096ff')
+        tr.enabledAnchors(['top-left', 'top-center', 'top-right', 'middle-right', 'bottom-right', 'bottom-center', 'bottom-left', 'middle-left'])
+        tr.rotateEnabled(true)
       }
       tr.getLayer()?.batchDraw()
     } else {
@@ -58,7 +73,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
       // the two deferred repaints coalesce or resolve in the wrong order.
       tr.getLayer()?.draw()
     }
-  }, [isSelected, obj.contentEditMode, loadedImage])
+  }, [isSelected, obj.contentEditMode, obj.locked, loadedImage])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -74,19 +89,6 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
       window.removeEventListener('keyup', onKeyUp)
     }
   }, [])
-
-  // Syncs the clip group to the frame rect during drag — content moves with frame.
-  function syncGroupToRect(): void {
-    const rect = frameRectRef.current
-    const group = groupRef.current
-    if (!rect || !group) return
-
-    group.x(rect.x())
-    group.y(rect.y())
-    group.rotation(rect.rotation())
-    group.clip({ x: 0, y: 0, width: obj.frameWidth, height: obj.frameHeight })
-    group.getLayer()?.batchDraw()
-  }
 
   // Syncs clip group during transform (resize). The frame origin may shift (e.g.
   // top/left handle drag), so compensate the image position to keep it fixed in
@@ -131,9 +133,35 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
     if (!obj.locked) commitUpdate(obj.id, { contentEditMode: true })
   }
 
+  function handleFrameDragMove(e: Konva.KonvaEventObject<DragEvent>): void {
+    const rect = e.target as Konva.Rect
+    const rawX = rect.x()
+    const rawY = rect.y()
+
+    const { x: snappedX, y: snappedY, guides } = computeSnap(
+      { x: rawX, y: rawY, width: obj.frameWidth, height: obj.frameHeight },
+      obj.id,
+    )
+
+    rect.x(snappedX)
+    rect.y(snappedY)
+    onGuidesChange(guides)
+
+    // Sync group to snapped position
+    const group = groupRef.current
+    if (group) {
+      group.x(snappedX)
+      group.y(snappedY)
+      group.rotation(rect.rotation())
+      group.clip({ x: 0, y: 0, width: obj.frameWidth, height: obj.frameHeight })
+      group.getLayer()?.batchDraw()
+    }
+  }
+
   function handleFrameDragEnd(e: Konva.KonvaEventObject<DragEvent>): void {
     const newX = e.target.x()
     const newY = e.target.y()
+    onGuidesChange([])
     commitUpdate(obj.id, { frameX: newX, frameY: newY, x: newX, y: newY })
   }
 
@@ -229,6 +257,9 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
 
   if (!image) return null
 
+  // Show multi-select highlight outline when in selectedIds but not the primary selected
+  const isInMultiSelect = selectedIds.includes(obj.id) && !isSelected
+
   return (
     <>
       {/* Visual clip container — purely for rendering, not for interaction in frame mode */}
@@ -269,16 +300,24 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
         fill="transparent"
         stroke="#0096ff"
         strokeWidth={1}
-        strokeEnabled={obj.contentEditMode}
+        strokeEnabled={obj.contentEditMode || isInMultiSelect}
         strokeScaleEnabled={false}
         perfectDrawEnabled={false}
         draggable={!obj.locked && !obj.contentEditMode}
         listening={!obj.contentEditMode}
-        onClick={() => { if (!obj.contentEditMode) onSelect() }}
+        onClick={(e) => {
+          if (!obj.contentEditMode) {
+            if (e.evt.shiftKey) {
+              addToSelection(obj.id)
+            } else {
+              onSelect()
+            }
+          }
+        }}
         onTap={() => { if (!obj.contentEditMode) onSelect() }}
         onDblClick={handleDblClick}
         onDblTap={handleDblClick}
-        onDragMove={syncGroupToRect}
+        onDragMove={handleFrameDragMove}
         onDragEnd={handleFrameDragEnd}
         onTransform={syncGroupOnTransform}
         onTransformEnd={handleFrameTransformEnd}

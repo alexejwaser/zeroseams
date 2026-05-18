@@ -24,9 +24,12 @@ export function LayerPanel(): React.ReactElement {
   const objects = useCanvasStore((s) => s.objects)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const selectedId = useCanvasStore((s) => s.selectedId)
+  const selectedIds = useCanvasStore((s) => s.selectedIds)
   const setSelected = useCanvasStore((s) => s.setSelected)
+  const addToSelection = useCanvasStore((s) => s.addToSelection)
   const updateObject = useCanvasStore((s) => s.updateObject)
   const reorderObjects = useCanvasStore((s) => s.reorderObjects)
+  const toggleLock = useCanvasStore((s) => s.toggleLock)
 
   const dragId = useRef<string | null>(null)
   const [dropPos, setDropPos] = useState<{ id: string; side: 'before' | 'after' } | null>(null)
@@ -34,13 +37,23 @@ export function LayerPanel(): React.ReactElement {
   // Reversed: top layer (last in objectOrder) appears first in list
   const reversedOrder = [...objectOrder].reverse()
 
-  function handleRowClick(id: string): void {
-    setSelected(id)
+  function handleRowClick(e: React.MouseEvent<HTMLDivElement>, id: string): void {
+    if (e.shiftKey) {
+      e.stopPropagation()
+      addToSelection(id)
+    } else {
+      setSelected(id)
+    }
   }
 
   function handleEyeClick(e: React.MouseEvent<HTMLButtonElement>, obj: CanvasObject): void {
     e.stopPropagation()
     updateObject(obj.id, { visible: !obj.visible })
+  }
+
+  function handleLockClick(e: React.MouseEvent<HTMLButtonElement>, id: string): void {
+    e.stopPropagation()
+    toggleLock(id)
   }
 
   function getDisplayName(id: string, originalIndex: number): string {
@@ -102,7 +115,7 @@ export function LayerPanel(): React.ReactElement {
           const obj = objects[id]
           if (!obj) return null
           const originalIndex = objectOrder.indexOf(id)
-          const isSelected = selectedId === id
+          const isSelected = selectedIds.includes(id) || selectedId === id
           const isDropBefore = dropPos?.id === id && dropPos.side === 'before'
           const isDropAfter = dropPos?.id === id && dropPos.side === 'after'
 
@@ -110,7 +123,7 @@ export function LayerPanel(): React.ReactElement {
             <div
               key={id}
               draggable={true}
-              onClick={() => handleRowClick(id)}
+              onClick={(e) => handleRowClick(e, id)}
               onDragStart={(e) => {
                 dragId.current = id
                 e.dataTransfer.setData('text/plain', id)
@@ -179,6 +192,25 @@ export function LayerPanel(): React.ReactElement {
               >
                 {getDisplayName(id, originalIndex)}
               </span>
+
+              {/* Lock toggle */}
+              <button
+                draggable={false}
+                onClick={(e) => handleLockClick(e, id)}
+                title={obj.locked ? 'Unlock layer' : 'Lock layer'}
+                style={{
+                  flexShrink: 0,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0 2px',
+                  fontSize: 13,
+                  lineHeight: '1',
+                  opacity: obj.locked ? 1 : 0.3,
+                }}
+              >
+                {obj.locked ? '🔒' : '🔓'}
+              </button>
 
               {/* Eye toggle */}
               <button

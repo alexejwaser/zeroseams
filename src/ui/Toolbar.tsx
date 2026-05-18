@@ -1,6 +1,7 @@
 import React from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useSaveStatusStore, type SaveStatus } from './useSaveStatusStore'
+import type { FrameRatio } from '@/types/project'
 
 type ActiveTool = 'select' | 'text' | 'shape'
 
@@ -11,6 +12,13 @@ const TOOL_LABELS: Record<ActiveTool, string> = {
 }
 
 const TOOLS: ActiveTool[] = ['select', 'text', 'shape']
+
+const RATIO_LABELS: Record<FrameRatio, string> = {
+  square: '1:1',
+  portrait: '4:5',
+}
+
+const RATIOS: FrameRatio[] = ['square', 'portrait']
 
 function SaveStatusPill({ status }: { status: SaveStatus }): React.ReactElement | null {
   if (status === 'idle') return null
@@ -47,6 +55,8 @@ export function Toolbar(): React.ReactElement {
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
   const saveStatus = useSaveStatusStore((s) => s.status)
+  const ratio = useCanvasStore((s) => s.ratio)
+  const setRatio = useCanvasStore((s) => s.setRatio)
 
   function handleToolClick(tool: ActiveTool): void {
     setActiveTool(tool)
@@ -152,7 +162,7 @@ export function Toolbar(): React.ReactElement {
         ))}
       </div>
 
-      {/* Right: frame count control + save status */}
+      {/* Right: ratio toggle + frame count control + save status */}
       <div
         style={{
           display: 'flex',
@@ -162,6 +172,44 @@ export function Toolbar(): React.ReactElement {
           flex: '0 0 auto',
         }}
       >
+        {/* Ratio toggle */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            background: '#222',
+            borderRadius: 4,
+            padding: '2px',
+            border: '1px solid #444',
+          }}
+        >
+          {RATIOS.map((r) => (
+            <button
+              key={r}
+              onClick={() => setRatio(r)}
+              title={r === 'square' ? 'Square (1080×1080)' : 'Portrait (1080×1350)'}
+              style={{
+                padding: '3px 10px',
+                height: 24,
+                background: ratio === r ? '#0af' : 'transparent',
+                color: ratio === r ? '#fff' : '#aaa',
+                border: 'none',
+                borderRadius: 3,
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: ratio === r ? 'bold' : 'normal',
+                transition: 'background 0.15s, color 0.15s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {RATIO_LABELS[r]}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ width: 8 }} />
+
         <span style={{ color: '#aaa', fontSize: 13 }}>Frames:</span>
         <button
           onClick={handleMinus}

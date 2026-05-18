@@ -7,19 +7,19 @@ import {
   getStageInstance,
   useCanvasStore,
   FRAME_WIDTH,
-  FRAME_HEIGHT,
 } from '@/canvas'
 import { Toolbar, LayerPanel, PropertiesPanel } from '@/ui'
 import { AIProvider } from '@/ai'
 
 function App(): React.ReactElement {
   const frameCount = useCanvasStore((s) => s.frameCount)
+  const frameHeight = useCanvasStore((s) => s.frameHeight)
 
   async function handleExport(): Promise<void> {
     try {
       const stage = getStageInstance()
       if (!stage) return
-      const blobs = await exportFrames(stage, frameCount, FRAME_WIDTH, FRAME_HEIGHT)
+      const blobs = await exportFrames(stage, frameCount, FRAME_WIDTH, frameHeight)
       await downloadFrames(blobs)
     } catch (err) {
       console.error('[export] failed:', err)
