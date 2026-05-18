@@ -24,10 +24,15 @@ export function CanvasTextNode({ obj, isSelected, onSelect }: CanvasTextNodeProp
     if (!tr || !node) return
     if (isSelected) {
       tr.nodes([node])
+      tr.getLayer()?.batchDraw()
     } else {
       tr.nodes([])
+      // Use synchronous draw() when detaching so the old transformer box is
+      // cleared immediately — before the newly selected transformer paints.
+      // batchDraw() is deferred (rAF) and can leave the ghost box visible if
+      // the two deferred repaints coalesce or resolve in the wrong order.
+      tr.getLayer()?.draw()
     }
-    tr.getLayer()?.batchDraw()
   }, [isSelected])
 
   // Inline editing on double-click

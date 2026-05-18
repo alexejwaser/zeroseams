@@ -10,6 +10,7 @@ import { CanvasTextNode } from './CanvasTextNode'
 import { useImageDrop } from './useImageDrop'
 import { useUndoRedoShortcuts } from './useUndoRedoShortcuts'
 import { useAutosave } from './useAutosave'
+import { useDeleteShortcut } from './useDeleteShortcut'
 export { exportFrames } from './exportFrames'
 
 // Module-level mutable reference so external callers can access the stage
@@ -36,6 +37,7 @@ export function CarouselStage(): React.ReactElement {
   useImageDrop(containerRef)
   useUndoRedoShortcuts()
   useAutosave()
+  useDeleteShortcut()
 
   useEffect(() => {
     _stageInstance = stageRef.current

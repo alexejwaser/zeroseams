@@ -12,7 +12,19 @@ interface CanvasImageNodeProps {
 }
 
 export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodeProps): React.ReactElement | null {
-  const [image] = useImage(obj.src)
+  const [loadedImage] = useImage(obj.src)
+
+  // Hold the last successfully loaded HTMLImageElement so the component never
+  // returns null during the brief loading gap when src changes (e.g. after
+  // background removal). Without this, useImage briefly returns undefined →
+  // component unmounts → Konva destroys and recreates the node → visible
+  // position/size jump even though the store values are untouched.
+  const stableImageRef = useRef<HTMLImageElement | undefined>(undefined)
+  if (loadedImage !== undefined) {
+    stableImageRef.current = loadedImage
+  }
+  const image = stableImageRef.current
+
   const frameRectRef = useRef<Konva.Rect>(null)
   const groupRef = useRef<Konva.Group>(null)
   const imageRef = useRef<Konva.Image>(null)
@@ -37,11 +49,16 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
         tr.nodes([frameRect])
         tr.borderStroke('#0096ff')
       }
+      tr.getLayer()?.batchDraw()
     } else {
       tr.nodes([])
+      // Use synchronous draw() when detaching so the old transformer box is
+      // cleared immediately — before the newly selected transformer paints.
+      // batchDraw() is deferred (rAF) and can leave the ghost box visible if
+      // the two deferred repaints coalesce or resolve in the wrong order.
+      tr.getLayer()?.draw()
     }
-    tr.getLayer()?.batchDraw()
-  }, [isSelected, obj.contentEditMode, image])
+  }, [isSelected, obj.contentEditMode, loadedImage])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -58,9 +75,23 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
     }
   }, [])
 
-  // Imperatively syncs the clip group (and optionally image content) to the
-  // frame rect during drag/transform — zero React re-renders per pointer event.
+  // Syncs the clip group to the frame rect during drag — content moves with frame.
   function syncGroupToRect(): void {
+    const rect = frameRectRef.current
+    const group = groupRef.current
+    if (!rect || !group) return
+
+    group.x(rect.x())
+    group.y(rect.y())
+    group.rotation(rect.rotation())
+    group.clip({ x: 0, y: 0, width: obj.frameWidth, height: obj.frameHeight })
+    group.getLayer()?.batchDraw()
+  }
+
+  // Syncs clip group during transform (resize). The frame origin may shift (e.g.
+  // top/left handle drag), so compensate the image position to keep it fixed in
+  // canvas space — only the clip boundary should change, not the content position.
+  function syncGroupOnTransform(): void {
     const rect = frameRectRef.current
     const group = groupRef.current
     const img = imageRef.current
@@ -74,17 +105,23 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
     group.rotation(rect.rotation())
     group.clip({ x: 0, y: 0, width: newWidth, height: newHeight })
 
-    // CMD+SHIFT — scale content proportionally alongside the frame (live preview).
-    // Shift locks aspect ratio via Konva's native keepRatio toggle, so
-    // newWidth/newHeight are already constrained; scaleX ≈ scaleY.
-    if (cmdHeldRef.current && img) {
-      const scaleX = newWidth / obj.frameWidth
-      const scaleY = newHeight / obj.frameHeight
-      const scale = (scaleX + scaleY) / 2
-      img.x(obj.contentOffsetX * scale)
-      img.y(obj.contentOffsetY * scale)
-      img.width(obj.contentWidth * scale)
-      img.height(obj.contentHeight * scale)
+    if (img) {
+      if (cmdHeldRef.current) {
+        // CMD+SHIFT: scale content proportionally alongside the frame (live preview).
+        const scaleX = newWidth / obj.frameWidth
+        const scaleY = newHeight / obj.frameHeight
+        const scale = (scaleX + scaleY) / 2
+        img.x(obj.contentOffsetX * scale)
+        img.y(obj.contentOffsetY * scale)
+        img.width(obj.contentWidth * scale)
+        img.height(obj.contentHeight * scale)
+      } else {
+        // Compensate for frame-origin movement so the image stays at the same
+        // canvas position. Without this, top/left handle drags shift the group
+        // origin and drag the image content along with it.
+        img.x(obj.contentOffsetX + (obj.frameX - rect.x()))
+        img.y(obj.contentOffsetY + (obj.frameY - rect.y()))
+      }
     }
 
     group.getLayer()?.batchDraw()
@@ -157,6 +194,11 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
         y: newFrameY,
         width: newFrameWidth,
         height: newFrameHeight,
+        // Persist the canvas-position compensation applied during live preview.
+        // When the frame origin shifts (top/left handle), contentOffset adjusts
+        // so the image stays at the same canvas position after commit.
+        contentOffsetX: obj.contentOffsetX + (obj.frameX - newFrameX),
+        contentOffsetY: obj.contentOffsetY + (obj.frameY - newFrameY),
       })
     }
   }
@@ -238,7 +280,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect }: CanvasImageNodePr
         onDblTap={handleDblClick}
         onDragMove={syncGroupToRect}
         onDragEnd={handleFrameDragEnd}
-        onTransform={syncGroupToRect}
+        onTransform={syncGroupOnTransform}
         onTransformEnd={handleFrameTransformEnd}
       />
 
