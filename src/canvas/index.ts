@@ -1,2 +1,4 @@
-// canvas-agent owns this directory.
-// Entry point for canvas utilities and components.
+export { CarouselStage, getStageInstance } from './CarouselStage'
+export { exportFrames } from './exportFrames'
+export { useCanvasStore } from './useCanvasStore'
+export * from './constants'

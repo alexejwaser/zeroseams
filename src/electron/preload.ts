@@ -1,2 +1,7 @@
-// electron-agent owns this file.
-// Preload script: exposes safe IPC APIs to the renderer via contextBridge.
+import { contextBridge } from 'electron'
+
+// Expose a minimal API surface to the renderer.
+// Expand this as IPC channels are added.
+contextBridge.exposeInMainWorld('electronAPI', {
+  platform: process.platform,
+})
