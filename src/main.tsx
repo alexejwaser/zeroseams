@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import {
   CarouselStage,
   exportFrames,
+  downloadFrames,
   getStageInstance,
   useCanvasStore,
   FRAME_WIDTH,
@@ -13,17 +14,15 @@ function App(): React.ReactElement {
   const frameCount = useCanvasStore((s) => s.frameCount)
 
   async function handleExport(): Promise<void> {
-    const stage = getStageInstance()
-    if (!stage) return
-    const blobs = await exportFrames(stage, frameCount, FRAME_WIDTH, FRAME_HEIGHT)
-    blobs.forEach((blob, i) => {
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `frame-${i + 1}.png`
-      a.click()
-      URL.revokeObjectURL(url)
-    })
+    try {
+      const stage = getStageInstance()
+      if (!stage) return
+      const blobs = await exportFrames(stage, frameCount, FRAME_WIDTH, FRAME_HEIGHT)
+      await downloadFrames(blobs)
+    } catch (err) {
+      console.error('[export] failed:', err)
+      alert(`Export failed: ${String(err)}`)
+    }
   }
 
   return (
@@ -42,7 +41,7 @@ function App(): React.ReactElement {
       </h1>
       <CarouselStage />
       <button
-        onClick={() => void handleExport()}
+        onClick={() => { void handleExport() }}
         style={{
           marginTop: 16,
           padding: '8px 24px',

@@ -1,15 +1,14 @@
 import { useEffect } from 'react'
 import type React from 'react'
-import type Konva from 'konva'
 import { useCanvasStore } from './useCanvasStore'
 import { FRAME_WIDTH, FRAME_HEIGHT } from './constants'
 
-export function useImageDrop(stageRef: React.RefObject<Konva.Stage>): void {
+export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): void {
   const addObject = useCanvasStore((s) => s.addObject)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
 
   useEffect(() => {
-    const container = stageRef.current?.container()
+    const container = containerRef.current
     if (!container) return
 
     function handleDragOver(e: DragEvent): void {
@@ -31,38 +30,34 @@ export function useImageDrop(stageRef: React.RefObject<Konva.Stage>): void {
         const dataUrl = readerEvent.target?.result
         if (typeof dataUrl !== 'string') return
 
-        // Calculate drop position in stage (unscaled) coordinates
-        const stage = stageRef.current
-        let dropX = FRAME_WIDTH / 2
-        let dropY = FRAME_HEIGHT / 2
+        // Load image to get natural dimensions before creating the object
+        const img = new Image()
+        img.onload = () => {
+          const MAX_SIZE = 600
+          const scale = Math.min(1, MAX_SIZE / Math.max(img.naturalWidth, img.naturalHeight))
+          const w = Math.round(img.naturalWidth * scale)
+          const h = Math.round(img.naturalHeight * scale)
 
-        if (stage) {
-          const pos = stage.getPointerPosition()
-          if (pos) {
-            // pos is already in stage content coordinates (accounts for scale)
-            dropX = pos.x / stage.scaleX()
-            dropY = pos.y / stage.scaleY()
-          }
+          addObject({
+            id: crypto.randomUUID(),
+            type: 'image',
+            scope: 'global',
+            src: dataUrl,
+            backgroundRemoved: false,
+            x: FRAME_WIDTH / 2 - w / 2,
+            y: FRAME_HEIGHT / 2 - h / 2,
+            width: w,
+            height: h,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
+            opacity: 1,
+            visible: true,
+            locked: false,
+            zIndex: objectOrder.length,
+          })
         }
-
-        addObject({
-          id: crypto.randomUUID(),
-          type: 'image',
-          scope: 'global',
-          src: dataUrl,
-          backgroundRemoved: false,
-          x: dropX,
-          y: dropY,
-          width: 400,
-          height: 400,
-          rotation: 0,
-          scaleX: 1,
-          scaleY: 1,
-          opacity: 1,
-          visible: true,
-          locked: false,
-          zIndex: objectOrder.length,
-        })
+        img.src = dataUrl
       }
       reader.readAsDataURL(file)
     }
@@ -76,5 +71,5 @@ export function useImageDrop(stageRef: React.RefObject<Konva.Stage>): void {
     }
     // objectOrder.length changes as objects are added; re-register to capture latest zIndex
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageRef, addObject, objectOrder.length])
+  }, [containerRef, addObject, objectOrder.length])
 }

@@ -19,13 +19,14 @@ export function getStageInstance(): Konva.Stage | null {
 
 export function CarouselStage(): React.ReactElement {
   const stageRef = useRef<Konva.Stage>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const objects = useCanvasStore((s) => s.objects)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const selectedId = useCanvasStore((s) => s.selectedId)
   const setSelected = useCanvasStore((s) => s.setSelected)
   const frameCount = useCanvasStore((s) => s.frameCount)
 
-  useImageDrop(stageRef)
+  useImageDrop(containerRef)
 
   useEffect(() => {
     _stageInstance = stageRef.current
@@ -39,6 +40,7 @@ export function CarouselStage(): React.ReactElement {
 
   return (
     <div
+      ref={containerRef}
       style={{
         width: canvasWidth,
         height: canvasHeight,

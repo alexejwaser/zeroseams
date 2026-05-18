@@ -22,10 +22,15 @@ export function CanvasImageNode({
   const updateObject = useCanvasStore((s) => s.updateObject)
 
   useEffect(() => {
-    if (isSelected && transformerRef.current && imageRef.current) {
-      transformerRef.current.nodes([imageRef.current])
-      transformerRef.current.getLayer()?.batchDraw()
+    const tr = transformerRef.current
+    const node = imageRef.current
+    if (!tr || !node) return
+    if (isSelected) {
+      tr.nodes([node])
+    } else {
+      tr.nodes([])
     }
+    tr.getLayer()?.batchDraw()
   }, [isSelected])
 
   if (!image) return null
@@ -63,16 +68,13 @@ export function CanvasImageNode({
           })
         }}
       />
-      {isSelected && (
-        <Transformer
-          ref={transformerRef}
-          boundBoxFunc={(oldBox, newBox) => {
-            // Prevent scaling to zero
-            if (newBox.width < 5 || newBox.height < 5) return oldBox
-            return newBox
-          }}
-        />
-      )}
+      <Transformer
+        ref={transformerRef}
+        boundBoxFunc={(oldBox, newBox) => {
+          if (newBox.width < 5 || newBox.height < 5) return oldBox
+          return newBox
+        }}
+      />
     </>
   )
 }
