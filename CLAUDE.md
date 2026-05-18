@@ -38,3 +38,8 @@ When implementing across domains, spawn parallel agents:
 - Components: functional with hooks only
 - Canvas objects: always typed with our CanvasObject interface
 - AI operations: always async with loading states
+
+## Known Patterns
+- File saving must use Electron IPC (window.electronAPI.saveFile) 
+  NOT anchor click downloads — Electron's Chromium blocks multi-file 
+  anchor downloads silently

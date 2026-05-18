@@ -1,11 +1,8 @@
 import React from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
-
-declare global {
-  interface Window {
-    __removeBg?: (id: string | null) => void
-  }
-}
+import { useAI } from '@/ai'
+import { useAIStore } from '@/ai'
+import type { BackgroundRemovalOperation } from '@/types/ai'
 
 interface NumberFieldProps {
   label: string
@@ -78,8 +75,25 @@ export function PropertiesPanel(): React.ReactElement {
   const selectedId = useCanvasStore((s) => s.selectedId)
   const updateObject = useCanvasStore((s) => s.updateObject)
 
+  const { removeBg } = useAI()
+  const operations = useAIStore((s) => s.operations)
+  const clearOperation = useAIStore((s) => s.clearOperation)
+
   const selectedObj = selectedId !== null ? objects[selectedId] : null
   const isImage = selectedObj?.type === 'image'
+
+  const activeBgOp: BackgroundRemovalOperation | undefined = selectedId
+    ? (Object.values(operations).find(
+        (op) => op.type === 'background-removal' && op.targetObjectId === selectedId
+      ) as BackgroundRemovalOperation | undefined)
+    : undefined
+
+  React.useEffect(() => {
+    if (activeBgOp?.status === 'done') {
+      const t = setTimeout(() => clearOperation(activeBgOp.id), 2000)
+      return () => clearTimeout(t)
+    }
+  }, [activeBgOp?.status, activeBgOp?.id, clearOperation])
 
   function patch(partial: Parameters<typeof updateObject>[1]): void {
     if (!selectedId) return
@@ -87,9 +101,7 @@ export function PropertiesPanel(): React.ReactElement {
   }
 
   function handleRemoveBg(): void {
-    if (window.__removeBg) {
-      window.__removeBg(selectedId)
-    }
+    if (selectedId) void removeBg(selectedId)
   }
 
   return (
@@ -219,22 +231,47 @@ export function PropertiesPanel(): React.ReactElement {
             >
               AI Tools
             </div>
-            <button
-              onClick={handleRemoveBg}
-              style={{
-                width: '100%',
-                height: 32,
-                background: '#0af',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: 'bold',
-              }}
-            >
-              Remove BG
-            </button>
+            {activeBgOp?.status === 'running' && (
+              <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '8px 10px' }}>
+                <div style={{ color: '#aaa', fontSize: 12, marginBottom: 6 }}>
+                  Removing background… {activeBgOp.progress}%
+                </div>
+                <div style={{ background: '#333', borderRadius: 3, height: 6, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      background: '#0af',
+                      width: `${activeBgOp.progress}%`,
+                      height: '100%',
+                      transition: 'width 0.2s',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            {activeBgOp?.status === 'done' && (
+              <div style={{ color: '#4f4', fontSize: 13 }}>Background removed</div>
+            )}
+            {activeBgOp?.status === 'error' && (
+              <div style={{ color: '#f44', fontSize: 12 }}>{activeBgOp.error}</div>
+            )}
+            {(!activeBgOp || activeBgOp.status === 'idle') && (
+              <button
+                onClick={handleRemoveBg}
+                style={{
+                  width: '100%',
+                  height: 32,
+                  background: '#0af',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: 'bold',
+                }}
+              >
+                Remove BG
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 import { removeBackground } from '@imgly/background-removal'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useAIStore } from './useAIStore'
@@ -86,15 +86,6 @@ export function useBackgroundRemoval(): UseBackgroundRemovalReturn {
     },
     []
   )
-
-  useEffect(() => {
-    (window as Window & { __removeBg?: (id: string) => void }).__removeBg = (id: string) => {
-      void removeBg(id)
-    }
-    return () => {
-      delete (window as Window & { __removeBg?: (id: string) => void }).__removeBg
-    }
-  }, [removeBg])
 
   return { removeBg, getOperation }
 }

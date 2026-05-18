@@ -51,10 +51,26 @@ export function CanvasImageNode({
         draggable={!obj.locked}
         onClick={onSelect}
         onTap={onSelect}
+        onDragMove={(e) => {
+          updateObject(obj.id, {
+            x: e.target.x(),
+            y: e.target.y(),
+          })
+        }}
         onDragEnd={(e) => {
           updateObject(obj.id, {
             x: e.target.x(),
             y: e.target.y(),
+          })
+        }}
+        onTransform={(e) => {
+          const node = e.target as Konva.Image
+          updateObject(obj.id, {
+            x: node.x(),
+            y: node.y(),
+            scaleX: node.scaleX(),
+            scaleY: node.scaleY(),
+            rotation: node.rotation(),
           })
         }}
         onTransformEnd={(e) => {
