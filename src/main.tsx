@@ -9,6 +9,8 @@ import {
   FRAME_WIDTH,
   FRAME_HEIGHT,
 } from '@/canvas'
+import { Toolbar, LayerPanel, PropertiesPanel } from '@/ui'
+import { AIProvider } from '@/ai'
 
 function App(): React.ReactElement {
   const frameCount = useCanvasStore((s) => s.frameCount)
@@ -30,30 +32,62 @@ function App(): React.ReactElement {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        padding: 24,
-        background: '#111',
-        minHeight: '100vh',
+        height: '100vh',
+        background: '#1a1a1a',
+        fontFamily: 'system-ui, sans-serif',
+        overflow: 'hidden',
       }}
     >
-      <h1 style={{ color: '#fff', marginBottom: 16, fontFamily: 'sans-serif' }}>
-        Zero Seams
-      </h1>
-      <CarouselStage />
-      <button
-        onClick={() => { void handleExport() }}
+      {/* Top toolbar */}
+      <Toolbar />
+
+      {/* Middle row: sidebar + canvas + properties */}
+      <div
         style={{
-          marginTop: 16,
-          padding: '8px 24px',
-          background: '#0af',
-          border: 'none',
-          borderRadius: 6,
-          cursor: 'pointer',
-          fontWeight: 'bold',
+          display: 'flex',
+          flex: 1,
+          overflow: 'hidden',
         }}
       >
-        Export Frames
-      </button>
+        <LayerPanel />
+
+        {/* Canvas area */}
+        <div
+          style={{
+            flex: 1,
+            overflowX: 'auto',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            padding: 24,
+            background: '#111',
+            boxSizing: 'border-box',
+          }}
+        >
+          <CarouselStage />
+          <button
+            onClick={() => { void handleExport() }}
+            style={{
+              marginTop: 16,
+              padding: '8px 24px',
+              background: '#0af',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: 14,
+              flexShrink: 0,
+            }}
+          >
+            Export Frames
+          </button>
+        </div>
+
+        <PropertiesPanel />
+      </div>
     </div>
   )
 }
@@ -62,6 +96,8 @@ const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Root element not found')
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <App />
+    <AIProvider>
+      <App />
+    </AIProvider>
   </React.StrictMode>,
 )

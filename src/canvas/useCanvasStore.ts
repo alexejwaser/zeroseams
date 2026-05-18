@@ -11,6 +11,7 @@ interface CanvasState {
   updateObject: (id: string, patch: Partial<CanvasObject>) => void
   removeObject: (id: string) => void
   setSelected: (id: string | null) => void
+  setFrameCount: (n: number) => void
 }
 
 export const useCanvasStore = create<CanvasState>((set) => ({
@@ -48,4 +49,6 @@ export const useCanvasStore = create<CanvasState>((set) => ({
     }),
 
   setSelected: (id) => set({ selectedId: id }),
+
+  setFrameCount: (n) => set({ frameCount: Math.max(1, Math.min(10, n)) }),
 }))
