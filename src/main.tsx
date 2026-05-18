@@ -59,7 +59,6 @@ function App(): React.ReactElement {
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
             justifyContent: 'flex-start',
             padding: 24,
             background: '#111',

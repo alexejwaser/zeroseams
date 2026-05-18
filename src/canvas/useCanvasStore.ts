@@ -12,6 +12,7 @@ interface CanvasState {
   removeObject: (id: string) => void
   setSelected: (id: string | null) => void
   setFrameCount: (n: number) => void
+  reorderObjects: (fromId: string, toId: string, side: 'before' | 'after') => void
 }
 
 export const useCanvasStore = create<CanvasState>((set) => ({
@@ -51,4 +52,20 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   setSelected: (id) => set({ selectedId: id }),
 
   setFrameCount: (n) => set({ frameCount: Math.max(1, Math.min(10, n)) }),
+
+  reorderObjects: (fromId, toId, side) =>
+    set((state) => {
+      const order = [...state.objectOrder]
+      const fromIndex = order.indexOf(fromId)
+      if (fromIndex === -1) return state
+      order.splice(fromIndex, 1)
+      const toIndex = order.indexOf(toId)
+      if (toIndex === -1) return state
+      // Panel is reversed from objectOrder, so:
+      // 'before' in panel (insert above target visually) = insert AFTER toId in objectOrder
+      // 'after' in panel (insert below target visually) = insert BEFORE toId in objectOrder
+      const insertAt = side === 'before' ? toIndex + 1 : toIndex
+      order.splice(insertAt, 0, fromId)
+      return { objectOrder: order }
+    }),
 }))

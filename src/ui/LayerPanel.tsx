@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import type { CanvasObject, CanvasObjectType } from '@/types/canvas'
 
@@ -26,6 +26,10 @@ export function LayerPanel(): React.ReactElement {
   const selectedId = useCanvasStore((s) => s.selectedId)
   const setSelected = useCanvasStore((s) => s.setSelected)
   const updateObject = useCanvasStore((s) => s.updateObject)
+  const reorderObjects = useCanvasStore((s) => s.reorderObjects)
+
+  const dragId = useRef<string | null>(null)
+  const [dropPos, setDropPos] = useState<{ id: string; side: 'before' | 'after' } | null>(null)
 
   // Reversed: top layer (last in objectOrder) appears first in list
   const reversedOrder = [...objectOrder].reverse()
@@ -43,7 +47,6 @@ export function LayerPanel(): React.ReactElement {
     const obj = objects[id]
     if (!obj) return 'Unknown'
     if (obj.name) return obj.name
-    // 1-based index from objectOrder (not reversed)
     return `${typeLabel(obj.type)} ${originalIndex + 1}`
   }
 
@@ -100,11 +103,38 @@ export function LayerPanel(): React.ReactElement {
           if (!obj) return null
           const originalIndex = objectOrder.indexOf(id)
           const isSelected = selectedId === id
+          const isDropBefore = dropPos?.id === id && dropPos.side === 'before'
+          const isDropAfter = dropPos?.id === id && dropPos.side === 'after'
 
           return (
             <div
               key={id}
+              draggable={true}
               onClick={() => handleRowClick(id)}
+              onDragStart={(e) => {
+                dragId.current = id
+                e.dataTransfer.setData('text/plain', id)
+                e.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                const rect = e.currentTarget.getBoundingClientRect()
+                const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+                setDropPos({ id, side })
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropPos(null)
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                const fromId = dragId.current ?? e.dataTransfer.getData('text/plain')
+                const side = dropPos?.id === id ? dropPos.side : 'before'
+                if (fromId && fromId !== id) reorderObjects(fromId, id, side)
+                dragId.current = null
+                setDropPos(null)
+              }}
+              onDragEnd={() => { dragId.current = null; setDropPos(null) }}
               style={{
                 height: 32,
                 display: 'flex',
@@ -115,6 +145,8 @@ export function LayerPanel(): React.ReactElement {
                 userSelect: 'none',
                 gap: 6,
                 borderLeft: isSelected ? '2px solid #0af' : '2px solid transparent',
+                borderTop: isDropBefore ? '2px solid #0af' : '2px solid transparent',
+                borderBottom: isDropAfter ? '2px solid #0af' : '2px solid transparent',
                 boxSizing: 'border-box',
               }}
             >
@@ -127,6 +159,7 @@ export function LayerPanel(): React.ReactElement {
                   textAlign: 'center',
                   color: obj.type === 'text' ? '#0af' : undefined,
                   fontWeight: obj.type === 'text' ? 'bold' : 'normal',
+                  pointerEvents: 'none',
                 }}
               >
                 {typeIcon(obj.type)}
@@ -141,6 +174,7 @@ export function LayerPanel(): React.ReactElement {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
                 }}
               >
                 {getDisplayName(id, originalIndex)}
@@ -148,6 +182,7 @@ export function LayerPanel(): React.ReactElement {
 
               {/* Eye toggle */}
               <button
+                draggable={false}
                 onClick={(e) => handleEyeClick(e, obj)}
                 title={obj.visible ? 'Hide layer' : 'Show layer'}
                 style={{
