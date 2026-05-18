@@ -10,6 +10,7 @@ interface CanvasState {
   objectOrder: string[] // render order bottom→top
   selectedId: string | null
   frameCount: number
+  activeTool: 'select' | 'text' | 'shape'
   past: HistorySnapshot[]
   future: HistorySnapshot[]
   // actions
@@ -19,6 +20,7 @@ interface CanvasState {
   removeObject: (id: string) => void
   setSelected: (id: string | null) => void
   setFrameCount: (n: number) => void
+  setActiveTool: (tool: 'select' | 'text' | 'shape') => void
   reorderObjects: (fromId: string, toId: string, side: 'before' | 'after') => void
   undo: () => void
   redo: () => void
@@ -37,6 +39,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     objectOrder: [],
     selectedId: null,
     frameCount: 2,
+    activeTool: 'select',
     past: [],
     future: [],
 
@@ -89,6 +92,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     setSelected: (id) => set({ selectedId: id }),
 
     setFrameCount: (n) => set({ frameCount: Math.max(1, Math.min(10, n)) }),
+
+    setActiveTool: (tool) => set({ activeTool: tool }),
 
     reorderObjects: (fromId, toId, side) =>
       set((state) => {

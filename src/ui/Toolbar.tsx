@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useSaveStatusStore, type SaveStatus } from './useSaveStatusStore'
 
@@ -38,7 +38,8 @@ function SaveStatusPill({ status }: { status: SaveStatus }): React.ReactElement 
 }
 
 export function Toolbar(): React.ReactElement {
-  const [activeTool, setActiveTool] = useState<ActiveTool>('select')
+  const activeTool = useCanvasStore((s) => s.activeTool)
+  const setActiveTool = useCanvasStore((s) => s.setActiveTool)
   const frameCount = useCanvasStore((s) => s.frameCount)
   const setFrameCount = useCanvasStore((s) => s.setFrameCount)
   const past = useCanvasStore((s) => s.past)

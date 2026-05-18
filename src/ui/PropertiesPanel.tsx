@@ -3,6 +3,7 @@ import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useAI } from '@/ai'
 import { useAIStore } from '@/ai'
 import type { BackgroundRemovalOperation } from '@/types/ai'
+import type { TextObject } from '@/types/canvas'
 
 interface NumberFieldProps {
   label: string
@@ -81,6 +82,7 @@ export function PropertiesPanel(): React.ReactElement {
 
   const selectedObj = selectedId !== null ? objects[selectedId] : null
   const isImage = selectedObj?.type === 'image'
+  const isText = selectedObj?.type === 'text'
 
   const activeBgOp: BackgroundRemovalOperation | undefined = selectedId
     ? (Object.values(operations).find(
@@ -155,7 +157,7 @@ export function PropertiesPanel(): React.ReactElement {
           </div>
         )}
 
-        {selectedObj !== null && !isImage && (
+        {selectedObj !== null && !isImage && !isText && (
           <div
             style={{
               padding: '20px 12px',
@@ -166,6 +168,100 @@ export function PropertiesPanel(): React.ReactElement {
             No properties
           </div>
         )}
+
+        {selectedObj !== null && isText && (() => {
+          const textObj = selectedObj as TextObject
+          return (
+            <div style={{ padding: '12px 12px 0' }}>
+              <NumberField label="X" value={textObj.x} onChange={(val) => patch({ x: val })} />
+              <NumberField label="Y" value={textObj.y} onChange={(val) => patch({ y: val })} />
+              <NumberField label="Width" value={textObj.width} min={1} onChange={(val) => patch({ width: val })} />
+              <NumberField label="Rotation" value={textObj.rotation} onChange={(val) => patch({ rotation: val })} />
+              <NumberField label="Opacity" value={textObj.opacity} step={0.01} min={0} max={1} onChange={(val) => patch({ opacity: val })} />
+
+              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Text</div>
+              <textarea
+                rows={3}
+                value={textObj.text}
+                onChange={(e) => patch({ text: e.target.value })}
+                style={{ width: '100%', background: '#1a1a1a', border: '1px solid #444', borderRadius: 4,
+                  color: '#fff', fontSize: 13, padding: '4px 6px', boxSizing: 'border-box',
+                  resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
+              />
+
+              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Font</div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Family</label>
+                <select value={textObj.fontFamily} onChange={(e) => patch({ fontFamily: e.target.value })}
+                  style={{ flex: 1, background: '#1a1a1a', border: '1px solid #444', borderRadius: 4,
+                    color: '#fff', fontSize: 13, padding: '3px 6px', outline: 'none' }}>
+                  {['sans-serif', 'serif', 'monospace', 'Georgia', 'Helvetica', 'Arial', 'Courier New', 'Times New Roman', 'Impact', 'Verdana'].map(f => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+              </div>
+              <NumberField label="Size" value={textObj.fontSize} min={8} max={400} onChange={(val) => patch({ fontSize: val })} />
+
+              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Style</div>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                {(['bold', 'italic'] as const).map((style) => {
+                  const active = textObj.fontStyle.includes(style)
+                  return (
+                    <button key={style} onClick={() => {
+                      const hasBold = textObj.fontStyle.includes('bold')
+                      const hasItalic = textObj.fontStyle.includes('italic')
+                      let next: TextObject['fontStyle']
+                      if (style === 'bold') {
+                        next = hasBold
+                          ? (hasItalic ? 'italic' : 'normal')
+                          : (hasItalic ? 'bold italic' : 'bold')
+                      } else {
+                        next = hasItalic
+                          ? (hasBold ? 'bold' : 'normal')
+                          : (hasBold ? 'bold italic' : 'italic')
+                      }
+                      patch({ fontStyle: next })
+                    }}
+                    style={{ padding: '3px 10px', height: 28, background: active ? '#0af' : '#333',
+                      color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
+                      fontWeight: style === 'bold' ? 'bold' : 'normal',
+                      fontStyle: style === 'italic' ? 'italic' : 'normal' }}>
+                      {style === 'bold' ? 'B' : 'I'}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                {(['left', 'center', 'right'] as const).map((a) => (
+                  <button key={a} onClick={() => patch({ align: a })}
+                    style={{ padding: '3px 10px', height: 28, flex: 1,
+                      background: textObj.align === a ? '#0af' : '#333',
+                      color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                    {a === 'left' ? '←' : a === 'center' ? '↔' : '→'}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Color</div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Fill</label>
+                <input type="color" value={textObj.fill} onChange={(e) => patch({ fill: e.target.value })}
+                  style={{ width: 40, height: 28, border: 'none', borderRadius: 4, cursor: 'pointer',
+                    background: 'none', padding: 0 }} />
+              </div>
+
+              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Spacing</div>
+              <NumberField label="Letter Sp." value={textObj.letterSpacing} step={0.5} onChange={(val) => patch({ letterSpacing: val })} />
+              <NumberField label="Line H." value={textObj.lineHeight} step={0.1} min={0.5} max={4} onChange={(val) => patch({ lineHeight: val })} />
+            </div>
+          )
+        })()}
 
         {selectedObj !== null && isImage && (
           <div style={{ padding: '12px 12px 0' }}>
