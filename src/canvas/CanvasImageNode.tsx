@@ -39,9 +39,17 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
   // the onGuidesChange state update doesn't fire mid-sync and reset the clip.
   const pendingGuidesRef = useRef<SnapGuide[]>([])
 
+  // Alt (option) key tracking for duplicate-on-drag
+  const altHeldRef = useRef(false)
+  const dragStartFrameXRef = useRef(0)
+  const dragStartFrameYRef = useRef(0)
+  const pendingDuplicateRef = useRef(false)
+
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
+  const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const { computeSnap, computeSnapResize } = useSnapGuides()
 
   // Memoized so React-Konva sees the same object reference between renders while
@@ -101,6 +109,17 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [])
+
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent): void => { if (e.altKey) altHeldRef.current = true }
+    const onUp = (e: KeyboardEvent): void => { if (!e.altKey) altHeldRef.current = false }
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
     }
   }, [])
 
@@ -179,13 +198,24 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
       group.clip({ x: 0, y: 0, width: obj.frameWidth, height: obj.frameHeight })
       group.getLayer()?.batchDraw()
     }
+
+    if (altHeldRef.current && !pendingDuplicateRef.current) {
+      pendingDuplicateRef.current = true
+    }
   }
 
   function handleFrameDragEnd(e: Konva.KonvaEventObject<DragEvent>): void {
     const newX = e.target.x()
     const newY = e.target.y()
     onGuidesChange([])
-    commitUpdate(obj.id, { frameX: newX, frameY: newY, x: newX, y: newY })
+    if (pendingDuplicateRef.current) {
+      const originPos = { frameX: dragStartFrameXRef.current, frameY: dragStartFrameYRef.current }
+      const finalPos = { frameX: newX, frameY: newY }
+      duplicateObjectAtOrigin(obj.id, originPos, finalPos)
+      pendingDuplicateRef.current = false
+    } else {
+      commitUpdate(obj.id, { frameX: newX, frameY: newY, x: newX, y: newY })
+    }
   }
 
   function handleFrameTransformEnd(e: Konva.KonvaEventObject<Event>): void {
@@ -360,6 +390,11 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         onTap={() => { if (!obj.contentEditMode) onSelect() }}
         onDblClick={handleDblClick}
         onDblTap={handleDblClick}
+        onDragStart={() => {
+          dragStartFrameXRef.current = obj.frameX
+          dragStartFrameYRef.current = obj.frameY
+          pendingDuplicateRef.current = false
+        }}
         onDragMove={handleFrameDragMove}
         onDragEnd={handleFrameDragEnd}
         onTransform={() => {
@@ -370,6 +405,12 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
           onGuidesChange(pendingGuidesRef.current)
         }}
         onTransformEnd={handleFrameTransformEnd}
+        onContextMenu={(e) => {
+          e.evt.preventDefault()
+          e.cancelBubble = true
+          if (!isSelected) onSelect()
+          setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: obj.id })
+        }}
       />
 
       <Transformer

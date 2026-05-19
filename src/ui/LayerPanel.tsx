@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
+import { useThumbnailStore } from '@/canvas/useThumbnailStore'
 import type { CanvasObject, CanvasObjectType } from '@/types/canvas'
 
 function typeIcon(type: CanvasObjectType): string {
@@ -30,6 +31,8 @@ export function LayerPanel(): React.ReactElement {
   const updateObject = useCanvasStore((s) => s.updateObject)
   const reorderObjects = useCanvasStore((s) => s.reorderObjects)
   const toggleLock = useCanvasStore((s) => s.toggleLock)
+
+  const thumbnails = useThumbnailStore((s) => s.thumbnails)
 
   const dragId = useRef<string | null>(null)
   const [dropPos, setDropPos] = useState<{ id: string; side: 'before' | 'after' } | null>(null)
@@ -156,13 +159,37 @@ export function LayerPanel(): React.ReactElement {
                 background: isSelected ? 'rgba(0,170,255,0.15)' : 'transparent',
                 cursor: 'pointer',
                 userSelect: 'none',
-                gap: 6,
+                gap: 4,
                 borderLeft: isSelected ? '2px solid #0af' : '2px solid transparent',
                 borderTop: isDropBefore ? '2px solid #0af' : '2px solid transparent',
                 borderBottom: isDropAfter ? '2px solid #0af' : '2px solid transparent',
                 boxSizing: 'border-box',
               }}
             >
+              {/* Thumbnail */}
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  flexShrink: 0,
+                  borderRadius: 3,
+                  overflow: 'hidden',
+                  background: '#111',
+                  border: '1px solid #3a3a3a',
+                }}
+              >
+                {thumbnails[id] != null ? (
+                  <img
+                    src={thumbnails[id]}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    alt=""
+                    draggable={false}
+                  />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', background: '#222' }} />
+                )}
+              </div>
+
               {/* Type icon */}
               <span
                 style={{

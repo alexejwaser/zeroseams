@@ -10,9 +10,9 @@ import { CanvasTextNode } from './CanvasTextNode'
 import { SnapGuides } from './SnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { useImageDrop } from './useImageDrop'
-import { useUndoRedoShortcuts } from './useUndoRedoShortcuts'
 import { useAutosave } from './useAutosave'
-import { useDeleteShortcut } from './useDeleteShortcut'
+import { useKeyboardShortcuts } from './useKeyboardShortcuts'
+import { useThumbnailGenerator } from './useThumbnailStore'
 export { exportFrames } from './exportFrames'
 
 // Module-level mutable reference so external callers can access the stage
@@ -39,13 +39,14 @@ export function CarouselStage(): React.ReactElement {
   const activeTool = useCanvasStore((s) => s.activeTool)
   const setActiveTool = useCanvasStore((s) => s.setActiveTool)
   const clearContentEditMode = useCanvasStore((s) => s.clearContentEditMode)
+  const setContextMenu = useCanvasStore((s) => s.setContextMenu)
 
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([])
 
   useImageDrop(containerRef)
-  useUndoRedoShortcuts()
   useAutosave()
-  useDeleteShortcut()
+  useKeyboardShortcuts()
+  useThumbnailGenerator()
 
   useEffect(() => {
     _stageInstance = stageRef.current
@@ -116,6 +117,10 @@ export function CarouselStage(): React.ReactElement {
             clearContentEditMode()
             setActiveGuides([])
           }
+        }}
+        onContextMenu={(e) => {
+          e.evt.preventDefault()
+          setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: null })
         }}
       >
         {/* Layer 1: background + guides */}

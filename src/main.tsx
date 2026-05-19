@@ -8,7 +8,7 @@ import {
   useCanvasStore,
   FRAME_WIDTH,
 } from '@/canvas'
-import { Toolbar, LayerPanel, PropertiesPanel } from '@/ui'
+import { Toolbar, LayerPanel, PropertiesPanel, ContextMenu } from '@/ui'
 import { AIProvider } from '@/ai'
 
 function App(): React.ReactElement {
@@ -87,6 +87,9 @@ function App(): React.ReactElement {
 
         <PropertiesPanel />
       </div>
+
+      {/* Portal-based context menu — renders to document.body */}
+      <ContextMenu />
     </div>
   )
 }

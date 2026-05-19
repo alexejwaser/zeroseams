@@ -21,7 +21,15 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
+  const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const { computeSnap } = useSnapGuides()
+
+  // Alt (option) key tracking for duplicate-on-drag
+  const altHeldRef = useRef(false)
+  const dragStartXRef = useRef(0)
+  const dragStartYRef = useRef(0)
+  const pendingDuplicateRef = useRef(false)
 
   // Wire transformer when selected
   useEffect(() => {
@@ -47,6 +55,17 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       tr.getLayer()?.draw()
     }
   }, [isSelected, obj.locked])
+
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent): void => { if (e.altKey) altHeldRef.current = true }
+    const onUp = (e: KeyboardEvent): void => { if (!e.altKey) altHeldRef.current = false }
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
+    }
+  }, [])
 
   // Inline editing on double-click
   function handleDblClick(): void {
@@ -166,6 +185,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         }}
         onTap={onSelect}
         onDblClick={handleDblClick}
+        onDragStart={() => {
+          dragStartXRef.current = obj.x
+          dragStartYRef.current = obj.y
+          pendingDuplicateRef.current = false
+        }}
         onDragMove={(e) => {
           const dragNode = e.target as Konva.Text
           const rawX = dragNode.x()
@@ -180,10 +204,21 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
           dragNode.y(snappedY)
           onGuidesChange(guides)
           updateObject(obj.id, { x: snappedX, y: snappedY })
+
+          if (altHeldRef.current && !pendingDuplicateRef.current) {
+            pendingDuplicateRef.current = true
+          }
         }}
         onDragEnd={(e) => {
           onGuidesChange([])
-          commitUpdate(obj.id, { x: e.target.x(), y: e.target.y() })
+          if (pendingDuplicateRef.current) {
+            const originPos = { x: dragStartXRef.current, y: dragStartYRef.current }
+            const finalPos = { x: e.target.x(), y: e.target.y() }
+            duplicateObjectAtOrigin(obj.id, originPos, finalPos)
+            pendingDuplicateRef.current = false
+          } else {
+            commitUpdate(obj.id, { x: e.target.x(), y: e.target.y() })
+          }
         }}
         onTransform={(e) => {
           const node = e.target as Konva.Text
@@ -200,6 +235,12 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
             scaleX: node.scaleX(), scaleY: node.scaleY(),
             rotation: node.rotation(),
           })
+        }}
+        onContextMenu={(e) => {
+          e.evt.preventDefault()
+          e.cancelBubble = true
+          if (!isSelected) onSelect()
+          setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: obj.id })
         }}
       />
       <Transformer

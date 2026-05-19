@@ -126,6 +126,51 @@ When implementing across domains, spawn parallel agents:
 - Canvas objects: always typed with our CanvasObject interface
 - AI operations: always async with loading states
 
+## Keyboard Shortcuts (sprint 11)
+All shortcuts handled in `src/canvas/useKeyboardShortcuts.ts`, mounted once in CarouselStage.
+Guard: no-op when focus is in INPUT / TEXTAREA / contentEditable.
+
+| Key | Action |
+|-----|--------|
+| `V` | Select tool |
+| `T` | Text tool |
+| `R` | Shape tool |
+| `Escape` | Deselect / exit content-edit mode (skipped when context menu is open) |
+| `⌘A` | Select all visible, non-locked objects |
+| `⌘D` | Duplicate selected (10px offset) |
+| `⌘]` | Bring forward |
+| `⌘[` | Send backward |
+| `⌘⇧]` | Bring to front |
+| `⌘⇧[` | Send to back |
+| `⌘L` | Toggle lock |
+| Arrow | Nudge 1px (Shift = 10px) |
+| `⌫` / `Delete` | Delete selected |
+| `⌘Z` | Undo |
+| `⌘⇧Z` | Redo |
+
+Old `useDeleteShortcut.ts` and `useUndoRedoShortcuts.ts` are superseded by `useKeyboardShortcuts.ts`.
+
+## Context Menu (sprint 11)
+`src/ui/ContextMenu.tsx` — React portal to `document.body`, `position: fixed`.
+- Right-click on a canvas object → object-level menu (Duplicate, Bring/Send, Lock, Delete)
+- Right-click on empty canvas → canvas-level menu (Add/Remove Frame)
+- State: `contextMenu: { x, y, targetId } | null` in `useCanvasStore` — volatile, NOT in `HistorySnapshot`
+- Dismiss: click outside, Escape, any enabled menu item click
+- Disabled items do not call `setContextMenu(null)` — menu stays open
+
+## Layer Thumbnails (sprint 11)
+`src/canvas/useThumbnailStore.ts` — separate Zustand store, never in HistorySnapshot.
+- Thumbnails generated via HTML Canvas 2D (no Konva) at 40×40
+- Generation triggers only on `past.length` changes (i.e. after `commitUpdate`), not during live drag
+- `useThumbnailGenerator()` hook mounted once in CarouselStage
+- LayerPanel reads `useThumbnailStore((s) => s.thumbnails)` to display 28×28 cells per row
+
+## Option+Drag Duplicate (sprint 11)
+Hold Alt/Option while dragging to leave a copy at the original position.
+- `pendingDuplicateRef` latches on first Alt-held drag move; checked at drag end
+- `duplicateObjectAtOrigin(id, originPos, finalPos)` — single `set()` → one history entry
+- Images use `{ frameX, frameY }` for origin/final; text uses `{ x, y }`
+
 ## Known Patterns
 - File saving must use Electron IPC (window.electronAPI.saveFile) 
   NOT anchor click downloads — Electron's Chromium blocks multi-file 

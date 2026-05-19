@@ -38,6 +38,8 @@ interface CanvasState {
   activeTool: 'select' | 'text' | 'shape'
   past: HistorySnapshot[]
   future: HistorySnapshot[]
+  // Volatile UI state — NOT in HistorySnapshot
+  contextMenu: { x: number; y: number; targetId: string | null } | null
   // actions
   addObject: (obj: CanvasObject) => void
   updateObject: (id: string, patch: Partial<CanvasObject>) => void
@@ -58,6 +60,18 @@ interface CanvasState {
   undo: () => void
   redo: () => void
   clearContentEditMode: () => void
+  setContextMenu: (state: { x: number; y: number; targetId: string | null } | null) => void
+  selectAll: () => void
+  bringForward: (id: string) => void
+  sendBackward: (id: string) => void
+  bringToFront: (id: string) => void
+  sendToBack: (id: string) => void
+  duplicateObject: (id: string, offsetX?: number, offsetY?: number) => void
+  duplicateObjectAtOrigin: (
+    id: string,
+    originPos: { x: number; y: number } | { frameX: number; frameY: number },
+    finalPos: { x: number; y: number } | { frameX: number; frameY: number },
+  ) => void
 }
 
 export const useCanvasStore = create<CanvasState>((set) => {
@@ -93,6 +107,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     activeTool: 'select',
     past: [],
     future: [],
+    contextMenu: null,
 
     addObject: (obj) =>
       set((state) => ({
@@ -449,6 +464,188 @@ export const useCanvasStore = create<CanvasState>((set) => {
         if (!changed) return state
         return { objects: updated }
       }),
+
+    setContextMenu: (menuState) => set({ contextMenu: menuState }),
+
+    selectAll: () =>
+      set((state) => {
+        const ids = state.objectOrder.filter((id) => {
+          const obj = state.objects[id]
+          return obj && obj.visible && !obj.locked
+        })
+        return {
+          selectedIds: ids,
+          selectedId: ids.length > 0 ? ids[ids.length - 1] : null,
+        }
+      }),
+
+    bringForward: (id) =>
+      set((state) => {
+        const order = [...state.objectOrder]
+        const idx = order.indexOf(id)
+        if (idx === -1 || idx === order.length - 1) return state
+        // Swap with next
+        const temp = order[idx + 1]
+        order[idx + 1] = order[idx]
+        order[idx] = temp
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objectOrder: order,
+        }
+      }),
+
+    sendBackward: (id) =>
+      set((state) => {
+        const order = [...state.objectOrder]
+        const idx = order.indexOf(id)
+        if (idx === -1 || idx === 0) return state
+        // Swap with previous
+        const temp = order[idx - 1]
+        order[idx - 1] = order[idx]
+        order[idx] = temp
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objectOrder: order,
+        }
+      }),
+
+    bringToFront: (id) =>
+      set((state) => {
+        const order = [...state.objectOrder]
+        const idx = order.indexOf(id)
+        if (idx === -1 || idx === order.length - 1) return state
+        order.splice(idx, 1)
+        order.push(id)
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objectOrder: order,
+        }
+      }),
+
+    sendToBack: (id) =>
+      set((state) => {
+        const order = [...state.objectOrder]
+        const idx = order.indexOf(id)
+        if (idx === -1 || idx === 0) return state
+        order.splice(idx, 1)
+        order.unshift(id)
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objectOrder: order,
+        }
+      }),
+
+    duplicateObject: (id, offsetX = 10, offsetY = 10) =>
+      set((state) => {
+        const obj = state.objects[id]
+        if (!obj) return state
+        const newId = crypto.randomUUID()
+        let duplicate: CanvasObject
+        if (obj.type === 'image') {
+          const img = obj as ImageObject
+          duplicate = {
+            ...img,
+            id: newId,
+            name: undefined,
+            contentEditMode: false,
+            frameX: img.frameX + offsetX,
+            frameY: img.frameY + offsetY,
+            x: img.x + offsetX,
+            y: img.y + offsetY,
+          }
+        } else {
+          duplicate = {
+            ...obj,
+            id: newId,
+            name: undefined,
+            x: obj.x + offsetX,
+            y: obj.y + offsetY,
+          } as CanvasObject
+        }
+        // Insert duplicate right after the source in objectOrder
+        const srcIdx = state.objectOrder.indexOf(id)
+        const newOrder = [...state.objectOrder]
+        newOrder.splice(srcIdx + 1, 0, newId)
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objects: { ...state.objects, [newId]: duplicate },
+          objectOrder: newOrder,
+        }
+      }),
+
+    duplicateObjectAtOrigin: (id, originPos, finalPos) =>
+      set((state) => {
+        const obj = state.objects[id]
+        if (!obj) return state
+        const newId = crypto.randomUUID()
+
+        // Build the clone that stays at originPos
+        let clone: CanvasObject
+        if (obj.type === 'image') {
+          const img = obj as ImageObject
+          const op = originPos as { frameX: number; frameY: number }
+          clone = {
+            ...img,
+            id: newId,
+            name: undefined,
+            contentEditMode: false,
+            frameX: op.frameX,
+            frameY: op.frameY,
+            x: op.frameX,
+            y: op.frameY,
+          }
+        } else {
+          const op = originPos as { x: number; y: number }
+          clone = {
+            ...obj,
+            id: newId,
+            name: undefined,
+            x: op.x,
+            y: op.y,
+          } as CanvasObject
+        }
+
+        // Update the source object to finalPos
+        let updatedSource: CanvasObject
+        if (obj.type === 'image') {
+          const img = obj as ImageObject
+          const fp = finalPos as { frameX: number; frameY: number }
+          updatedSource = {
+            ...img,
+            frameX: fp.frameX,
+            frameY: fp.frameY,
+            x: fp.frameX,
+            y: fp.frameY,
+          }
+        } else {
+          const fp = finalPos as { x: number; y: number }
+          updatedSource = {
+            ...obj,
+            x: fp.x,
+            y: fp.y,
+          } as CanvasObject
+        }
+
+        // Insert clone right before the source in objectOrder
+        const srcIdx = state.objectOrder.indexOf(id)
+        const newOrder = [...state.objectOrder]
+        newOrder.splice(srcIdx, 0, newId)
+
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objects: {
+            ...state.objects,
+            [id]: updatedSource,
+            [newId]: clone,
+          },
+          objectOrder: newOrder,
+        }
+      }),
   }
 })
-
