@@ -11,9 +11,7 @@ export function useAutosave(): { status: SaveStatus; lastSavedAt: string | null 
   const [status, setStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
 
-  // Stable refs so the subscription callback always closes over the latest values
-  const projectIdRef = useRef<string>(crypto.randomUUID())
-  const createdAtRef = useRef<string>(new Date().toISOString())
+  // versionRef is a local increment counter — stays in the hook
   const versionRef = useRef<number>(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -43,31 +41,27 @@ export function useAutosave(): { status: SaveStatus; lastSavedAt: string | null 
         const state = useCanvasStore.getState()
         const { frameCount, objects, objectOrder } = state
 
-        const frames = Array.from({ length: frameCount }, (_, i) => ({
-          index: i,
-          label: `Slide ${i + 1}`,
-          backgroundColor: null as string | null,
-        }))
+        const saveStore = useSaveStatusStore.getState()
 
         versionRef.current += 1
 
         const project: CarouselProject = {
-          id: projectIdRef.current,
-          name: 'Untitled Project',
-          ratio: 'square',
-          dimensions: { width: 1080, height: 1080 },
+          id: saveStore.projectId,
+          name: saveStore.projectName,
+          ratio: state.ratio,
+          dimensions: { width: 1080, height: state.frameHeight as 1080 | 1350 },
           frameCount,
-          frames,
-          backgroundColor: '#ffffff',
+          frames: state.frames,
+          backgroundColor: state.backgroundColor,
           objects,
           objectOrder,
-          createdAt: createdAtRef.current,
+          createdAt: saveStore.createdAt,
           updatedAt: new Date().toISOString(),
           version: versionRef.current,
         }
 
         window.electronAPI
-          .autosaveProject('untitled', JSON.stringify(project))
+          .autosaveProject(saveStore.projectFilename, JSON.stringify(project))
           .then(() => {
             applyStatus('saved')
             const savedAt = new Date().toISOString()

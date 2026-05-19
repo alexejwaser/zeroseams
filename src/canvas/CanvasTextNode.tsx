@@ -27,6 +27,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
 
   // Alt (option) key tracking for duplicate-on-drag
   const altHeldRef = useRef(false)
+  const cmdHeldRef = useRef(false)
   const dragStartXRef = useRef(0)
   const dragStartYRef = useRef(0)
   const pendingDuplicateRef = useRef(false)
@@ -42,7 +43,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         tr.enabledAnchors([])
         tr.rotateEnabled(false)
       } else {
-        tr.enabledAnchors(['top-left', 'top-right', 'bottom-left', 'bottom-right'])
+        tr.enabledAnchors([
+          'top-left', 'top-center', 'top-right',
+          'middle-right', 'bottom-right', 'bottom-center',
+          'bottom-left', 'middle-left',
+        ])
         tr.rotateEnabled(true)
       }
       tr.getLayer()?.batchDraw()
@@ -59,6 +64,17 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   useEffect(() => {
     const onDown = (e: KeyboardEvent): void => { if (e.altKey) altHeldRef.current = true }
     const onUp = (e: KeyboardEvent): void => { if (!e.altKey) altHeldRef.current = false }
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
+    }
+  }, [])
+
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent): void => { if (e.key === 'Meta') cmdHeldRef.current = true }
+    const onUp = (e: KeyboardEvent): void => { if (e.key === 'Meta') cmdHeldRef.current = false }
     window.addEventListener('keydown', onDown)
     window.addEventListener('keyup', onUp)
     return () => {
@@ -96,9 +112,9 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     textarea.style.position = 'fixed'
     textarea.style.left = `${screenX}px`
     textarea.style.top = `${screenY}px`
-    textarea.style.width = `${obj.width * obj.scaleX * CANVAS_SCALE}px`
-    textarea.style.minHeight = `${obj.height * obj.scaleY * CANVAS_SCALE}px`
-    textarea.style.fontSize = `${obj.fontSize * obj.scaleX * CANVAS_SCALE}px`
+    textarea.style.width = `${obj.width * CANVAS_SCALE}px`
+    textarea.style.minHeight = `${obj.height * CANVAS_SCALE}px`
+    textarea.style.fontSize = `${obj.fontSize * CANVAS_SCALE}px`
     textarea.style.fontFamily = obj.fontFamily
     textarea.style.fontStyle = obj.fontStyle
     textarea.style.textAlign = obj.align
@@ -112,7 +128,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     textarea.style.overflow = 'hidden'
     textarea.style.zIndex = '9999'
     textarea.style.lineHeight = String(obj.lineHeight)
-    textarea.style.letterSpacing = `${obj.letterSpacing * obj.scaleX}px`
+    textarea.style.letterSpacing = `${obj.letterSpacing}px`
     document.body.appendChild(textarea)
     textarea.focus()
     textarea.select()
@@ -145,8 +161,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         <Rect
           x={obj.x}
           y={obj.y}
-          width={obj.width * obj.scaleX}
-          height={obj.height * obj.scaleY}
+          width={obj.width}
+          height={obj.height}
           rotation={obj.rotation}
           fill="transparent"
           stroke="#0096ff"
@@ -175,6 +191,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         fill={obj.fill}
         letterSpacing={obj.letterSpacing}
         lineHeight={obj.lineHeight}
+        wrap="word"
         draggable={!obj.locked}
         onClick={(e) => {
           if (e.evt.shiftKey) {
@@ -196,7 +213,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
           const rawY = dragNode.y()
 
           const { x: snappedX, y: snappedY, guides } = computeSnap(
-            { x: rawX, y: rawY, width: obj.width * obj.scaleX, height: obj.height * obj.scaleY },
+            { x: rawX, y: rawY, width: obj.width, height: obj.height },
             obj.id,
           )
 
@@ -222,19 +239,49 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         }}
         onTransform={(e) => {
           const node = e.target as Konva.Text
+          const absWidth = node.width() * node.scaleX()
+          const absHeight = node.height() * node.scaleY()
+          node.width(absWidth)
+          node.height(absHeight)
+          node.scaleX(1)
+          node.scaleY(1)
           updateObject(obj.id, {
-            x: node.x(), y: node.y(),
-            scaleX: node.scaleX(), scaleY: node.scaleY(),
+            x: node.x(),
+            y: node.y(),
+            width: absWidth,
+            height: absHeight,
+            scaleX: 1,
+            scaleY: 1,
             rotation: node.rotation(),
           })
         }}
         onTransformEnd={(e) => {
           const node = e.target as Konva.Text
-          commitUpdate(obj.id, {
-            x: node.x(), y: node.y(),
-            scaleX: node.scaleX(), scaleY: node.scaleY(),
-            rotation: node.rotation(),
-          })
+          const absWidth = node.width() * node.scaleX()
+          const absHeight = node.height() * node.scaleY()
+          node.width(absWidth)
+          node.height(absHeight)
+          node.scaleX(1)
+          node.scaleY(1)
+          const evt = e.evt as MouseEvent
+          const isPropScale = (cmdHeldRef.current || evt.metaKey) && evt.shiftKey
+          if (isPropScale && obj.width > 0) {
+            const newFontSize = Math.max(4, Math.round(obj.fontSize * (absWidth / obj.width)))
+            commitUpdate(obj.id, {
+              x: node.x(), y: node.y(),
+              width: absWidth, height: absHeight,
+              scaleX: 1, scaleY: 1,
+              rotation: node.rotation(),
+              fontSize: newFontSize,
+            })
+          } else {
+            commitUpdate(obj.id, {
+              x: node.x(), y: node.y(),
+              width: absWidth, height: absHeight,
+              scaleX: 1, scaleY: 1,
+              rotation: node.rotation(),
+            })
+          }
         }}
         onContextMenu={(e) => {
           e.evt.preventDefault()
@@ -245,9 +292,14 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       />
       <Transformer
         ref={transformerRef}
-        enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
+        keepRatio={false}
+        enabledAnchors={[
+          'top-left', 'top-center', 'top-right',
+          'middle-right', 'bottom-right', 'bottom-center',
+          'bottom-left', 'middle-left',
+        ]}
         boundBoxFunc={(oldBox, newBox) => {
-          if (newBox.width < 5 || newBox.height < 5) return oldBox
+          if (newBox.width < 20 || newBox.height < 10) return oldBox
           return newBox
         }}
       />

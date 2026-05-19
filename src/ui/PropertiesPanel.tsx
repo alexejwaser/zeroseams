@@ -3,7 +3,7 @@ import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useAI } from '@/ai'
 import { useAIStore } from '@/ai'
 import type { BackgroundRemovalOperation } from '@/types/ai'
-import type { ImageObject, TextObject } from '@/types/canvas'
+import type { ImageObject, TextObject, ShapeObject } from '@/types/canvas'
 import type { Frame } from '@/types/project'
 
 interface NumberFieldProps {
@@ -382,6 +382,7 @@ export function PropertiesPanel(): React.ReactElement {
   const selectedObj = selectedId !== null ? objects[selectedId] : null
   const isImage = selectedObj?.type === 'image'
   const isText = selectedObj?.type === 'text'
+  const isShape = selectedObj?.type === 'shape'
   const isMultiSelect = selectedIds.length > 1
   const isNoneSelected = selectedId === null && selectedIds.length === 0
 
@@ -468,7 +469,7 @@ export function PropertiesPanel(): React.ReactElement {
         )}
 
         {/* Single object selected: per-object properties */}
-        {!isMultiSelect && selectedObj !== null && !isImage && !isText && (
+        {!isMultiSelect && selectedObj !== null && !isImage && !isText && !isShape && (
           <div
             style={{
               padding: '20px 12px',
@@ -570,6 +571,29 @@ export function PropertiesPanel(): React.ReactElement {
                 textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Spacing</div>
               <NumberField label="Letter Sp." value={textObj.letterSpacing} step={0.5} onChange={(val) => patch({ letterSpacing: val })} />
               <NumberField label="Line H." value={textObj.lineHeight} step={0.1} min={0.5} max={4} onChange={(val) => patch({ lineHeight: val })} />
+            </div>
+          )
+        })()}
+
+        {!isMultiSelect && selectedObj !== null && isShape && (() => {
+          const shapeObj = selectedObj as ShapeObject
+          return (
+            <div style={{ padding: '12px 12px 0' }}>
+              <div style={sectionLabelStyle}>Transform</div>
+              <NumberField label="X" value={Math.round(shapeObj.x)} onChange={(val) => patch({ x: val })} />
+              <NumberField label="Y" value={Math.round(shapeObj.y)} onChange={(val) => patch({ y: val })} />
+              <NumberField label="Width" value={Math.round(shapeObj.width)} min={1} onChange={(val) => patch({ width: val })} />
+              <NumberField label="Height" value={Math.round(shapeObj.height)} min={1} onChange={(val) => patch({ height: val })} />
+              <NumberField label="Rotation" value={shapeObj.rotation} onChange={(val) => patch({ rotation: val })} />
+              <NumberField label="Opacity" value={shapeObj.opacity} step={0.01} min={0} max={1} onChange={(val) => patch({ opacity: val })} />
+              <div style={sectionLabelStyle}>Fill</div>
+              <ColorInput value={shapeObj.fill || '#000000'} onChange={(color) => { commitUpdate(shapeObj.id, { fill: color }) }} />
+              <div style={sectionLabelStyle}>Stroke</div>
+              <ColorInput value={shapeObj.stroke || '#000000'} onChange={(color) => { commitUpdate(shapeObj.id, { stroke: color }) }} />
+              <NumberField label="Stroke W." value={shapeObj.strokeWidth} min={0} step={0.5} onChange={(val) => { commitUpdate(shapeObj.id, { strokeWidth: val }) }} />
+              {shapeObj.kind === 'rect' && (
+                <NumberField label="Corner R." value={shapeObj.cornerRadius ?? 0} min={0} onChange={(val) => { commitUpdate(shapeObj.id, { cornerRadius: val }) }} />
+              )}
             </div>
           )
         })()}

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { CanvasObject, ImageObject } from '@/types/canvas'
-import type { Frame, FrameRatio } from '@/types/project'
+import type { CanvasObject, ImageObject, ShapeKind } from '@/types/canvas'
+import type { Frame, FrameRatio, CarouselProject } from '@/types/project'
 
 type HistorySnapshot = Pick<
   CanvasState,
@@ -40,6 +40,9 @@ interface CanvasState {
   future: HistorySnapshot[]
   // Volatile UI state — NOT in HistorySnapshot
   contextMenu: { x: number; y: number; targetId: string | null } | null
+  activeShapeKind: ShapeKind
+  setActiveShapeKind: (kind: ShapeKind) => void
+  loadProject: (project: CarouselProject) => void
   // actions
   addObject: (obj: CanvasObject) => void
   updateObject: (id: string, patch: Partial<CanvasObject>) => void
@@ -108,6 +111,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     past: [],
     future: [],
     contextMenu: null,
+    activeShapeKind: 'rect',
 
     addObject: (obj) =>
       set((state) => ({
@@ -466,6 +470,25 @@ export const useCanvasStore = create<CanvasState>((set) => {
       }),
 
     setContextMenu: (menuState) => set({ contextMenu: menuState }),
+
+    setActiveShapeKind: (kind) => set({ activeShapeKind: kind }),
+
+    loadProject: (project) =>
+      set(() => ({
+        objects: project.objects,
+        objectOrder: project.objectOrder,
+        frameCount: project.frameCount,
+        ratio: project.ratio,
+        frameHeight: project.dimensions.height,
+        frames: project.frames,
+        backgroundColor: project.backgroundColor,
+        selectedId: null,
+        selectedIds: [],
+        contextMenu: null,
+        activeTool: 'select',
+        past: [],
+        future: [],
+      })),
 
     selectAll: () =>
       set((state) => {

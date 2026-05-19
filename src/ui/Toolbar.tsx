@@ -5,6 +5,8 @@ import { getStageInstance } from '@/canvas/CarouselStage'
 import { exportFrames, downloadFrames } from '@/canvas/exportFrames'
 import { useSaveStatusStore, type SaveStatus } from './useSaveStatusStore'
 import type { FrameRatio } from '@/types/project'
+import type { CarouselProject } from '@/types/project'
+import type { ShapeKind } from '@/types/canvas'
 
 type ActiveTool = 'select' | 'text' | 'shape'
 
@@ -61,6 +63,11 @@ export function Toolbar(): React.ReactElement {
   const ratio = useCanvasStore((s) => s.ratio)
   const setRatio = useCanvasStore((s) => s.setRatio)
   const frameHeight = useCanvasStore((s) => s.frameHeight)
+  const loadProject = useCanvasStore((s) => s.loadProject)
+  const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
+  const setActiveShapeKind = useCanvasStore((s) => s.setActiveShapeKind)
+  const setProjectMeta = useSaveStatusStore((s) => s.setProjectMeta)
+  const projectName = useSaveStatusStore((s) => s.projectName)
 
   const [exportOpen, setExportOpen] = useState(false)
   const [exportMode, setExportMode] = useState<'all' | 'single' | 'range'>('all')
@@ -68,8 +75,12 @@ export function Toolbar(): React.ReactElement {
   const [exportFrom, setExportFrom] = useState(1)
   const [exportTo, setExportTo] = useState(frameCount)
   const [exporting, setExporting] = useState(false)
+  const [recentOpen, setRecentOpen] = useState(false)
+  const [recentFiles, setRecentFiles] = useState<Array<{ name: string; path: string; modifiedAt: string }>>([])
+  const [loadingProject, setLoadingProject] = useState(false)
 
   const exportWrapperRef = useRef<HTMLDivElement>(null)
+  const recentWrapperRef = useRef<HTMLDivElement>(null)
 
   // Keep exportTo in sync when frameCount changes
   useEffect(() => {
@@ -89,6 +100,18 @@ export function Toolbar(): React.ReactElement {
     document.addEventListener('mousedown', handleMouseDown)
     return () => { document.removeEventListener('mousedown', handleMouseDown) }
   }, [exportOpen])
+
+  // Dismiss recent panel on outside click
+  useEffect(() => {
+    if (!recentOpen) return
+    function handleMouseDown(e: MouseEvent): void {
+      if (recentWrapperRef.current != null && !recentWrapperRef.current.contains(e.target as Node)) {
+        setRecentOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => { document.removeEventListener('mousedown', handleMouseDown) }
+  }, [recentOpen])
 
   async function handleExportAction(): Promise<void> {
     const stage = getStageInstance()
@@ -119,6 +142,31 @@ export function Toolbar(): React.ReactElement {
       setExporting(false)
       setExportOpen(false)
     }
+  }
+
+  async function handleOpen(): Promise<void> {
+    setLoadingProject(true)
+    try {
+      const result = await window.electronAPI.openProject()
+      if (!result.success || result.json == null) return
+      const project = JSON.parse(result.json) as CarouselProject
+      loadProject(project)
+      const filename = project.name.toLowerCase().replace(/\s+/g, '-')
+      setProjectMeta(project.id, project.name, filename, project.createdAt)
+    } catch (err) {
+      console.error('[open]', err)
+    } finally {
+      setLoadingProject(false)
+      setRecentOpen(false)
+    }
+  }
+
+  async function handleRecentToggle(): Promise<void> {
+    if (!recentOpen) {
+      const result = await window.electronAPI.listRecentProjects()
+      setRecentFiles(result.files)
+    }
+    setRecentOpen((v) => !v)
   }
 
   function handleToolClick(tool: ActiveTool): void {
@@ -201,7 +249,87 @@ export function Toolbar(): React.ReactElement {
           flex: '0 0 auto',
         }}
       >
-        Zero Seams
+        {`Zero Seams${projectName !== 'Untitled Project' ? ` — ${projectName}` : ''}`}
+      </div>
+
+      {/* Open button + recent projects */}
+      <div ref={recentWrapperRef} style={{ position: 'relative', display: 'flex', marginLeft: 12, flex: '0 0 auto' }}>
+        <button
+          onClick={() => { void handleOpen() }}
+          disabled={loadingProject}
+          style={{
+            padding: '4px 10px',
+            height: 30,
+            background: '#333',
+            color: loadingProject ? '#777' : '#fff',
+            border: 'none',
+            borderRadius: '4px 0 0 4px',
+            cursor: loadingProject ? 'default' : 'pointer',
+            fontSize: 13,
+            borderRight: '1px solid #555',
+            whiteSpace: 'nowrap' as const,
+          }}
+        >
+          {loadingProject ? 'Opening…' : 'Open'}
+        </button>
+        <button
+          onClick={() => { void handleRecentToggle() }}
+          style={{
+            padding: '4px 6px',
+            height: 30,
+            background: recentOpen ? '#555' : '#333',
+            color: '#aaa',
+            border: 'none',
+            borderRadius: '0 4px 4px 0',
+            cursor: 'pointer',
+            fontSize: 11,
+          }}
+          title="Recent projects"
+        >
+          ▾
+        </button>
+
+        {recentOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              zIndex: 1000,
+              marginTop: 6,
+              background: '#1e1e1e',
+              border: '1px solid #3a3a3a',
+              borderRadius: 8,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+              padding: '4px 0',
+              minWidth: 260,
+            }}
+          >
+            {recentFiles.length === 0 ? (
+              <div style={{ padding: '8px 14px', color: '#555', fontSize: 12 }}>No recent projects</div>
+            ) : (
+              recentFiles.map((file) => (
+                <div
+                  key={file.path}
+                  title={file.path}
+                  onClick={() => { void handleOpen() }}
+                  style={{
+                    padding: '7px 14px',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid #2a2a2a',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#2a2a2a' }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+                >
+                  <div style={{ color: '#e0e0e0', fontSize: 13, fontWeight: 'bold' }}>{file.name}</div>
+                  <div style={{ color: '#666', fontSize: 11 }}>
+                    {new Date(file.modifiedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* Center: undo/redo + tool buttons */}
@@ -250,6 +378,32 @@ export function Toolbar(): React.ReactElement {
             {TOOL_LABELS[tool]}
           </button>
         ))}
+
+        {activeTool === 'shape' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              background: '#222',
+              borderRadius: 4,
+              padding: '2px',
+              border: '1px solid #444',
+              marginLeft: 4,
+            }}
+          >
+            {(['rect', 'ellipse', 'line'] as ShapeKind[]).map((kind) => (
+              <button
+                key={kind}
+                onClick={() => { setActiveShapeKind(kind) }}
+                title={kind}
+                style={segmentButtonStyle(activeShapeKind === kind)}
+              >
+                {kind === 'rect' ? '▭' : kind === 'ellipse' ? '⬭' : '╱'}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Right: ratio toggle + frame count control + export + save status */}

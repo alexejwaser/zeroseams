@@ -185,6 +185,31 @@ Hold Alt/Option while dragging to leave a copy at the original position.
 - `duplicateObjectAtOrigin(id, originPos, finalPos)` — single `set()` → one history entry
 - Images use `{ frameX, frameY }` for origin/final; text uses `{ x, y }`
 
+## Shape Tool (sprint 13)
+`src/canvas/CanvasShapeNode.tsx` — handles `rect`, `ellipse`, `line`, `arrow` ShapeObjects.
+- **Ellipse coordinate convention**: Store uses bounding-box top-left `(x, y)` for ALL object types. Konva Ellipse uses center. Conversions:
+  - Render: `x={obj.x + obj.width/2}`, `y={obj.y + obj.height/2}`, `radiusX/Y = obj.width/2, obj.height/2`
+  - `onDragMove/End`: `rawX = node.x() - obj.width/2`
+  - `onTransform/End`: bake via `getDimsFromNode` / `bakeNodeScale` helpers inside the component
+- **Transformer anchors**: rect/ellipse = all 8; line/arrow = middle-left + middle-right only, rotate disabled
+- **Drawing interaction** in `CarouselStage.tsx`: mousedown on empty stage → sets `drawStartRef` + `previewShape` state; mousemove → updates preview rect; mouseup → `addObject` + `setSelected` + revert to select tool. Misclicks (`width < 5 && height < 5`) are discarded.
+- **Sub-type selector**: `activeShapeKind: ShapeKind` in `useCanvasStore`; selector appears in Toolbar only when `activeTool === 'shape'`
+- Option+drag duplicate uses `{ x, y }` origin/final (same as text — not `{ frameX, frameY }`)
+
+## Text Transform (sprint 13)
+Text resize is **InDesign-style**: handles resize the textbox boundary, text reflows inside. Scale is never stored.
+- `onTransform`: bake `node.width() * node.scaleX()` → `node.width()`, reset scale to 1 imperatively; call `updateObject`
+- `onTransformEnd`: same bake; if **CMD+Shift held** during a corner drag → also scale `fontSize` proportionally (`newFontSize = fontSize * (newWidth / oldWidth)`)
+- `KonvaText` has `wrap="word"` — text clips to `height` boundary (no auto-grow)
+- `scaleX/scaleY` on TextObject are always 1 after sprint 13 — never multiply by them in textarea or snap box calculations
+- `cmdHeldRef` tracks Meta key (separate useEffect, same pattern as `altHeldRef`)
+
+## Project Load/Save (sprint 13)
+- **`loadProject(project: CarouselProject)`** in `useCanvasStore` — replaces all 7 canvas state fields and resets `selectedId/selectedIds/contextMenu/activeTool/past/future`. Does NOT call `pushHistoryFrom` — loading is a session reset, not undoable.
+- **`useSaveStatusStore`** (`src/ui/useSaveStatusStore.ts`) now holds project metadata: `projectId`, `projectName`, `projectFilename`, `createdAt`. Set via `setProjectMeta(id, name, filename, createdAt)`. `useAutosave.ts` reads these via `useSaveStatusStore.getState()` (not React hooks — it's inside a non-React callback).
+- **`useAutosave.ts` bug fixes (sprint 13)**: `ratio`, `frames`, `backgroundColor`, `frameHeight` now read from `state` (were previously hardcoded). Project metadata now comes from `useSaveStatusStore.getState()`.
+- **Open UI**: Toolbar has a split Open/▾ button. Open triggers `window.electronAPI.openProject()` → file dialog → parse JSON → `loadProject` + `setProjectMeta`. The ▾ chevron fetches `listRecentProjects()` and shows a dropdown.
+
 ## Known Patterns
 - File saving must use Electron IPC (window.electronAPI.saveFile) 
   NOT anchor click downloads — Electron's Chromium blocks multi-file 

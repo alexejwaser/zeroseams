@@ -1,12 +1,14 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { Stage, Layer } from 'react-konva'
+import { Stage, Layer, Rect as KonvaRect } from 'react-konva'
 import type Konva from 'konva'
-import type { ImageObject, TextObject } from '@/types/canvas'
+import type { ImageObject, TextObject, ShapeObject } from '@/types/canvas'
+import type { ShapeKind } from '@/types/canvas'
 import { FRAME_WIDTH, CANVAS_SCALE } from './constants'
 import { useCanvasStore } from './useCanvasStore'
 import { FrameGuides } from './FrameGuides'
 import { CanvasImageNode } from './CanvasImageNode'
 import { CanvasTextNode } from './CanvasTextNode'
+import { CanvasShapeNode } from './CanvasShapeNode'
 import { SnapGuides } from './SnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { useImageDrop } from './useImageDrop'
@@ -40,8 +42,18 @@ export function CarouselStage(): React.ReactElement {
   const setActiveTool = useCanvasStore((s) => s.setActiveTool)
   const clearContentEditMode = useCanvasStore((s) => s.clearContentEditMode)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
+  const updateObject = useCanvasStore((s) => s.updateObject)
+  const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
 
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([])
+  const [previewShape, setPreviewShape] = useState<{
+    kind: ShapeKind
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null>(null)
+  const drawStartRef = useRef<{ x: number; y: number; id: string } | null>(null)
 
   useImageDrop(containerRef)
   useAutosave()
@@ -65,7 +77,7 @@ export function CarouselStage(): React.ReactElement {
         width: canvasWidth,
         height: canvasHeight,
         background: '#1a1a1a',
-        cursor: activeTool === 'text' ? 'text' : 'default',
+        cursor: activeTool === 'text' ? 'text' : activeTool === 'shape' ? 'crosshair' : 'default',
       }}
     >
       <Stage
@@ -111,12 +123,69 @@ export function CarouselStage(): React.ReactElement {
             })
             setSelected(newId)
             setActiveTool('select')
+          } else if (activeTool === 'shape') {
+            if (e.target !== e.target.getStage()) return
+            const stage = e.target.getStage()
+            if (!stage) return
+            const pos = stage.getPointerPosition()
+            if (!pos) return
+            const canvasX = pos.x / CANVAS_SCALE
+            const canvasY = pos.y / CANVAS_SCALE
+            const newId = crypto.randomUUID()
+            drawStartRef.current = { x: canvasX, y: canvasY, id: newId }
+            setPreviewShape({ kind: activeShapeKind, x: canvasX, y: canvasY, width: 1, height: 1 })
           } else {
             setSelected(null)
             setSelectedIds([])
             clearContentEditMode()
             setActiveGuides([])
           }
+        }}
+        onMouseMove={(e) => {
+          if (!drawStartRef.current || previewShape === null) return
+          const stage = e.target.getStage()
+          if (!stage) return
+          const pos = stage.getPointerPosition()
+          if (!pos) return
+          const curX = pos.x / CANVAS_SCALE
+          const curY = pos.y / CANVAS_SCALE
+          const x = Math.min(drawStartRef.current.x, curX)
+          const y = Math.min(drawStartRef.current.y, curY)
+          const width = Math.max(1, Math.abs(curX - drawStartRef.current.x))
+          const height = Math.max(1, Math.abs(curY - drawStartRef.current.y))
+          setPreviewShape((prev) => prev === null ? null : { kind: prev.kind, x, y, width, height })
+        }}
+        onMouseUp={() => {
+          const drawStart = drawStartRef.current
+          const preview = previewShape
+          drawStartRef.current = null
+          setPreviewShape(null)
+          if (!drawStart || !preview) return
+          // Discard misclicks (tiny drag)
+          if (preview.width < 5 && preview.height < 5) return
+          addObject({
+            id: drawStart.id,
+            type: 'shape',
+            kind: preview.kind,
+            scope: 'global',
+            x: preview.x,
+            y: preview.y,
+            width: preview.width,
+            height: preview.height,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
+            opacity: 1,
+            visible: true,
+            locked: false,
+            zIndex: objectOrder.length,
+            fill: '#4488ff',
+            stroke: 'transparent',
+            strokeWidth: 0,
+            cornerRadius: 0,
+          })
+          setSelected(drawStart.id)
+          setActiveTool('select')
         }}
         onContextMenu={(e) => {
           e.evt.preventDefault()
@@ -160,8 +229,34 @@ export function CarouselStage(): React.ReactElement {
                 />
               )
             }
+            if (obj.type === 'shape') {
+              return (
+                <CanvasShapeNode
+                  key={id}
+                  obj={obj as ShapeObject}
+                  isSelected={selectedId === id}
+                  onSelect={() => { setSelected(id) }}
+                  onGuidesChange={setActiveGuides}
+                />
+              )
+            }
             return null // other types TBD
           })}
+          {previewShape !== null && (
+            <KonvaRect
+              x={previewShape.x}
+              y={previewShape.y}
+              width={previewShape.width}
+              height={previewShape.height}
+              fill="rgba(68, 136, 255, 0.15)"
+              stroke="#4488ff"
+              strokeWidth={1}
+              strokeScaleEnabled={false}
+              dash={[6, 4]}
+              listening={false}
+              perfectDrawEnabled={false}
+            />
+          )}
         </Layer>
 
         {/* Layer 3: snap guide lines (non-listening) */}
