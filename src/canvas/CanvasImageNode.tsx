@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useMemo } from 'react'
 import { Group, Image as KonvaImage, Rect, Transformer } from 'react-konva'
 import useImage from 'use-image'
 import type Konva from 'konva'
@@ -35,10 +35,24 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
   // Tracks CMD key only — SHIFT is handled natively by Konva Transformer:
   // with keepRatio=false as base, holding Shift toggles it to true automatically.
   const cmdHeldRef = useRef(false)
+  // Guides computed in boundBoxFunc, emitted after syncGroupOnTransform so that
+  // the onGuidesChange state update doesn't fire mid-sync and reset the clip.
+  const pendingGuidesRef = useRef<SnapGuide[]>([])
+
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
-  const { computeSnap } = useSnapGuides()
+  const { computeSnap, computeSnapResize } = useSnapGuides()
+
+  // Memoized so React-Konva sees the same object reference between renders while
+  // the frame dimensions are unchanged. Without this, every re-render (e.g. from
+  // setActiveGuides state updates) creates a new clip object, React-Konva detects
+  // a "change" and resets the Konva clip back to stored dimensions — overwriting
+  // the live scaled clip set imperatively in syncGroupOnTransform, causing flicker.
+  const groupClip = useMemo(
+    () => ({ x: 0, y: 0, width: obj.frameWidth, height: obj.frameHeight }),
+    [obj.frameWidth, obj.frameHeight],
+  )
 
   // Re-run when image loads so transformer can attach on first select.
   useEffect(() => {
@@ -90,9 +104,12 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
     }
   }, [])
 
-  // Syncs clip group during transform (resize). The frame origin may shift (e.g.
-  // top/left handle drag), so compensate the image position to keep it fixed in
-  // canvas space — only the clip boundary should change, not the content position.
+  // Syncs clip group during transform (resize/rotate). During resize, the frame
+  // origin may shift (top/left handle drag), so compensate the image position to
+  // keep it fixed in canvas space. During pure rotation, no compensation is needed
+  // because the content offset is relative to the group which already co-rotates.
+  // NOTE: does not call onGuidesChange — guides are emitted by the onTransform
+  // handler after this runs, from pendingGuidesRef set by boundBoxFunc.
   function syncGroupOnTransform(): void {
     const rect = frameRectRef.current
     const group = groupRef.current
@@ -101,6 +118,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
 
     const newWidth = rect.width() * rect.scaleX()
     const newHeight = rect.height() * rect.scaleY()
+    const isPureRotation = Math.abs(rect.scaleX() - 1) < 0.001 && Math.abs(rect.scaleY() - 1) < 0.001
 
     group.x(rect.x())
     group.y(rect.y())
@@ -108,7 +126,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
     group.clip({ x: 0, y: 0, width: newWidth, height: newHeight })
 
     if (img) {
-      if (cmdHeldRef.current) {
+      if (cmdHeldRef.current && !isPureRotation) {
         // CMD+SHIFT: scale content proportionally alongside the frame (live preview).
         const scaleX = newWidth / obj.frameWidth
         const scaleY = newHeight / obj.frameHeight
@@ -117,10 +135,15 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         img.y(obj.contentOffsetY * scale)
         img.width(obj.contentWidth * scale)
         img.height(obj.contentHeight * scale)
+      } else if (isPureRotation) {
+        // Pure rotation: content offset is relative to the group and co-rotates
+        // with it — no adjustment needed.
+        img.x(obj.contentOffsetX)
+        img.y(obj.contentOffsetY)
       } else {
-        // Compensate for frame-origin movement so the image stays at the same
-        // canvas position. Without this, top/left handle drags shift the group
-        // origin and drag the image content along with it.
+        // Resize: compensate for frame-origin movement so the image stays at the
+        // same canvas position. Without this, top/left handle drags shift the
+        // group origin and drag the image content along with it.
         img.x(obj.contentOffsetX + (obj.frameX - rect.x()))
         img.y(obj.contentOffsetY + (obj.frameY - rect.y()))
       }
@@ -169,6 +192,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
     const rect = frameRectRef.current
     if (!rect) return
 
+    const isPureRotation = Math.abs(rect.scaleX() - 1) < 0.001 && Math.abs(rect.scaleY() - 1) < 0.001
+
     const newFrameX = rect.x()
     const newFrameY = rect.y()
     const newFrameWidth = rect.width() * rect.scaleX()
@@ -186,13 +211,15 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
       group.clip({ x: 0, y: 0, width: newFrameWidth, height: newFrameHeight })
     }
 
+    onGuidesChange([])
+
     // Read CMD from both the ref and the native event (belt-and-suspenders:
     // the ref may have been cleared early if the key was released before mouseup).
     const nativeEvent = e.evt as MouseEvent | TouchEvent
     const cmdFromEvent = 'metaKey' in nativeEvent && (nativeEvent as MouseEvent).metaKey
     const isPropMode = cmdHeldRef.current || cmdFromEvent
 
-    if (isPropMode) {
+    if (isPropMode && !isPureRotation) {
       const scaleX = newFrameWidth / obj.frameWidth
       const scaleY = newFrameHeight / obj.frameHeight
       const scale = (scaleX + scaleY) / 2
@@ -210,6 +237,22 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         contentOffsetY: obj.contentOffsetY * scale,
         contentWidth: obj.contentWidth * scale,
         contentHeight: obj.contentHeight * scale,
+      })
+    } else if (isPureRotation) {
+      // Pure rotation: content offsets are relative to the group and co-rotate —
+      // they must not be adjusted.
+      commitUpdate(obj.id, {
+        frameX: newFrameX,
+        frameY: newFrameY,
+        frameWidth: newFrameWidth,
+        frameHeight: newFrameHeight,
+        rotation: newRotation,
+        x: newFrameX,
+        y: newFrameY,
+        width: newFrameWidth,
+        height: newFrameHeight,
+        contentOffsetX: obj.contentOffsetX,
+        contentOffsetY: obj.contentOffsetY,
       })
     } else {
       commitUpdate(obj.id, {
@@ -267,7 +310,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         ref={groupRef}
         x={obj.frameX}
         y={obj.frameY}
-        clip={{ x: 0, y: 0, width: obj.frameWidth, height: obj.frameHeight }}
+        clip={groupClip}
         rotation={obj.rotation}
         opacity={obj.opacity}
         listening={obj.contentEditMode}
@@ -319,7 +362,13 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         onDblTap={handleDblClick}
         onDragMove={handleFrameDragMove}
         onDragEnd={handleFrameDragEnd}
-        onTransform={syncGroupOnTransform}
+        onTransform={() => {
+          syncGroupOnTransform()
+          // Emit guides computed by boundBoxFunc — done here (after the imperative
+          // node updates) so the resulting state update cannot interfere with the
+          // clip/image values we just set above.
+          onGuidesChange(pendingGuidesRef.current)
+        }}
         onTransformEnd={handleFrameTransformEnd}
       />
 
@@ -328,7 +377,24 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         keepRatio={false}
         boundBoxFunc={(oldBox, newBox) => {
           if (newBox.width < 5 || newBox.height < 5) return oldBox
-          return newBox
+
+          const rotation = newBox.rotation ?? 0
+          const anchor = transformerRef.current?.getActiveAnchor() ?? ''
+
+          // Skip snap for rotated frames (axis-aligned targets don't map cleanly)
+          // and for the rotation handle itself.
+          if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+            pendingGuidesRef.current = []
+            return newBox
+          }
+
+          const { box: snapped, guides } = computeSnapResize(
+            { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+            anchor,
+            obj.id,
+          )
+          pendingGuidesRef.current = guides
+          return { ...snapped, rotation: newBox.rotation }
         }}
       />
     </>

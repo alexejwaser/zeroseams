@@ -366,6 +366,7 @@ export function PropertiesPanel(): React.ReactElement {
   const selectedId = useCanvasStore((s) => s.selectedId)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const updateObject = useCanvasStore((s) => s.updateObject)
+  const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const alignObjects = useCanvasStore((s) => s.alignObjects)
   const distributeObjects = useCanvasStore((s) => s.distributeObjects)
   const backgroundColor = useCanvasStore((s) => s.backgroundColor)
@@ -669,14 +670,36 @@ export function PropertiesPanel(): React.ReactElement {
               />
 
               <button
-                onClick={() => patch({
-                  frameWidth: imgObj.contentWidth,
-                  frameHeight: imgObj.contentHeight,
-                  width: imgObj.contentWidth,
-                  height: imgObj.contentHeight,
-                  contentOffsetX: 0,
-                  contentOffsetY: 0,
-                })}
+                onClick={() => {
+                  if (!selectedId) return
+                  // Rotate the content offset vector by the frame's rotation angle so
+                  // the new frame origin lands exactly at the content's canvas-space
+                  // top-left, regardless of rotation. When rotation is 0 this reduces
+                  // to frameX + contentOffsetX / frameY + contentOffsetY.
+                  const θ = imgObj.rotation * (Math.PI / 180)
+                  const cosθ = Math.cos(θ)
+                  const sinθ = Math.sin(θ)
+                  const newFrameX =
+                    imgObj.frameX +
+                    imgObj.contentOffsetX * cosθ -
+                    imgObj.contentOffsetY * sinθ
+                  const newFrameY =
+                    imgObj.frameY +
+                    imgObj.contentOffsetX * sinθ +
+                    imgObj.contentOffsetY * cosθ
+                  commitUpdate(selectedId, {
+                    frameX: newFrameX,
+                    frameY: newFrameY,
+                    x: newFrameX,
+                    y: newFrameY,
+                    frameWidth: imgObj.contentWidth,
+                    frameHeight: imgObj.contentHeight,
+                    width: imgObj.contentWidth,
+                    height: imgObj.contentHeight,
+                    contentOffsetX: 0,
+                    contentOffsetY: 0,
+                  })
+                }}
                 style={{
                   width: '100%',
                   height: 30,
