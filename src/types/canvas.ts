@@ -1,7 +1,7 @@
 // CanvasObject — every element that lives on the carousel canvas.
 // Agents must use this interface; never use `any` for canvas objects.
 
-export type CanvasObjectType = 'image' | 'text' | 'shape' | 'group'
+export type CanvasObjectType = 'image' | 'text' | 'shape' | 'group' | 'path'
 
 export type CanvasObjectScope =
   | 'global'   // spans the full canvas freely
@@ -87,6 +87,25 @@ export interface ShapeObject extends BaseCanvasObject {
   stroke: string
   strokeWidth: number
   cornerRadius?: number   // rect only
+  x2?: number             // second endpoint, absolute canvas x (line/arrow only)
+  y2?: number             // second endpoint, absolute canvas y (line/arrow only)
+}
+
+export interface AnchorPoint {
+  x: number
+  y: number
+  handleIn: { dx: number; dy: number }   // relative to anchor; (0,0) = sharp corner
+  handleOut: { dx: number; dy: number }  // relative to anchor; (0,0) = sharp corner
+}
+
+export interface PathObject extends BaseCanvasObject {
+  type: 'path'
+  anchors: AnchorPoint[]
+  closed: boolean
+  fill: string
+  stroke: string
+  strokeWidth: number
+  pathEditMode: boolean
 }
 
 export interface GroupObject extends BaseCanvasObject {
@@ -94,4 +113,4 @@ export interface GroupObject extends BaseCanvasObject {
   childIds: string[]
 }
 
-export type CanvasObject = ImageObject | TextObject | ShapeObject | GroupObject
+export type CanvasObject = ImageObject | TextObject | ShapeObject | GroupObject | PathObject

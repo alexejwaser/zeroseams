@@ -3,7 +3,7 @@ import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useAI } from '@/ai'
 import { useAIStore } from '@/ai'
 import type { BackgroundRemovalOperation } from '@/types/ai'
-import type { ImageObject, TextObject, ShapeObject } from '@/types/canvas'
+import type { ImageObject, TextObject, ShapeObject, PathObject } from '@/types/canvas'
 import type { Frame } from '@/types/project'
 
 interface NumberFieldProps {
@@ -383,6 +383,7 @@ export function PropertiesPanel(): React.ReactElement {
   const isImage = selectedObj?.type === 'image'
   const isText = selectedObj?.type === 'text'
   const isShape = selectedObj?.type === 'shape'
+  const isPath = selectedObj?.type === 'path'
   const isMultiSelect = selectedIds.length > 1
   const isNoneSelected = selectedId === null && selectedIds.length === 0
 
@@ -397,6 +398,7 @@ export function PropertiesPanel(): React.ReactElement {
       const t = setTimeout(() => clearOperation(activeBgOp.id), 2000)
       return () => clearTimeout(t)
     }
+    return undefined
   }, [activeBgOp?.status, activeBgOp?.id, clearOperation])
 
   function patch(partial: Parameters<typeof updateObject>[1]): void {
@@ -469,7 +471,7 @@ export function PropertiesPanel(): React.ReactElement {
         )}
 
         {/* Single object selected: per-object properties */}
-        {!isMultiSelect && selectedObj !== null && !isImage && !isText && !isShape && (
+        {!isMultiSelect && selectedObj !== null && !isImage && !isText && !isShape && !isPath && (
           <div
             style={{
               padding: '20px 12px',
@@ -594,6 +596,56 @@ export function PropertiesPanel(): React.ReactElement {
               {shapeObj.kind === 'rect' && (
                 <NumberField label="Corner R." value={shapeObj.cornerRadius ?? 0} min={0} onChange={(val) => { commitUpdate(shapeObj.id, { cornerRadius: val }) }} />
               )}
+            </div>
+          )
+        })()}
+
+        {!isMultiSelect && selectedObj !== null && isPath && (() => {
+          const pathObj = selectedObj as PathObject
+          return (
+            <div style={{ padding: '12px 12px 0' }}>
+              {pathObj.pathEditMode && (
+                <div style={{
+                  background: 'rgba(68,136,255,0.15)',
+                  border: '1px solid #4488ff',
+                  borderRadius: 4,
+                  padding: '6px 8px',
+                  marginBottom: 8,
+                  color: '#4488ff',
+                  fontSize: 11,
+                }}>
+                  Path edit mode — drag anchors and handles
+                </div>
+              )}
+              <div style={{ color: '#888', fontSize: 11, marginBottom: 8 }}>
+                X: {Math.round(pathObj.x)} · Y: {Math.round(pathObj.y)} · W: {Math.round(pathObj.width)} · H: {Math.round(pathObj.height)}
+              </div>
+              <div style={sectionLabelStyle}>Opacity</div>
+              <NumberField
+                label="Opacity"
+                value={pathObj.opacity}
+                step={0.01}
+                min={0}
+                max={1}
+                onChange={(val) => patch({ opacity: val })}
+              />
+              <div style={sectionLabelStyle}>Fill</div>
+              <ColorInput
+                value={pathObj.fill || '#000000'}
+                onChange={(color) => { commitUpdate(pathObj.id, { fill: color }) }}
+              />
+              <div style={sectionLabelStyle}>Stroke</div>
+              <ColorInput
+                value={pathObj.stroke || '#000000'}
+                onChange={(color) => { commitUpdate(pathObj.id, { stroke: color }) }}
+              />
+              <NumberField
+                label="Stroke W."
+                value={pathObj.strokeWidth}
+                min={0}
+                step={0.5}
+                onChange={(val) => { commitUpdate(pathObj.id, { strokeWidth: val }) }}
+              />
             </div>
           )
         })()}

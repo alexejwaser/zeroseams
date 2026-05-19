@@ -1,10 +1,12 @@
 import { useEffect } from 'react'
 import { useCanvasStore } from './useCanvasStore'
+import type { ImageObject, ShapeObject } from '@/types/canvas'
 
 export function useKeyboardShortcuts(): void {
   const setActiveTool = useCanvasStore((s) => s.setActiveTool)
   const setSelected = useCanvasStore((s) => s.setSelected)
   const clearContentEditMode = useCanvasStore((s) => s.clearContentEditMode)
+  const clearPathEditMode = useCanvasStore((s) => s.clearPathEditMode)
   const selectAll = useCanvasStore((s) => s.selectAll)
   const duplicateObject = useCanvasStore((s) => s.duplicateObject)
   const bringForward = useCanvasStore((s) => s.bringForward)
@@ -14,6 +16,7 @@ export function useKeyboardShortcuts(): void {
   const toggleLock = useCanvasStore((s) => s.toggleLock)
   const removeObject = useCanvasStore((s) => s.removeObject)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+  const moveObject = useCanvasStore((s) => s.moveObject)
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
 
@@ -43,6 +46,10 @@ export function useKeyboardShortcuts(): void {
           setActiveTool('shape')
           return
         }
+        if (e.key === 'p') {
+          setActiveTool('pen')
+          return
+        }
       }
 
       if (e.key === 'Escape') {
@@ -50,6 +57,7 @@ export function useKeyboardShortcuts(): void {
         if (useCanvasStore.getState().contextMenu !== null) return
         setSelected(null)
         clearContentEditMode()
+        clearPathEditMode()
         return
       }
 
@@ -73,13 +81,22 @@ export function useKeyboardShortcuts(): void {
         const dy =
           e.key === 'ArrowUp' ? -delta : e.key === 'ArrowDown' ? delta : 0
         if (obj.type === 'image') {
-          const img = obj
+          const img = obj as ImageObject
           commitUpdate(selectedId, {
             frameX: img.frameX + dx,
             frameY: img.frameY + dy,
             x: img.x + dx,
             y: img.y + dy,
           })
+        } else if (obj.type === 'shape') {
+          const s = obj as ShapeObject
+          if (s.kind === 'line' || s.kind === 'arrow') {
+            moveObject(selectedId, dx, dy)
+          } else {
+            commitUpdate(selectedId, { x: obj.x + dx, y: obj.y + dy })
+          }
+        } else if (obj.type === 'path') {
+          moveObject(selectedId, dx, dy)
         } else {
           commitUpdate(selectedId, { x: obj.x + dx, y: obj.y + dy })
         }
@@ -156,6 +173,7 @@ export function useKeyboardShortcuts(): void {
     setActiveTool,
     setSelected,
     clearContentEditMode,
+    clearPathEditMode,
     selectAll,
     duplicateObject,
     bringForward,
@@ -165,6 +183,7 @@ export function useKeyboardShortcuts(): void {
     toggleLock,
     removeObject,
     commitUpdate,
+    moveObject,
     undo,
     redo,
   ])

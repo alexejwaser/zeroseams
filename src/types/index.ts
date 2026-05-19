@@ -7,6 +7,8 @@ export type {
   ShapeKind,
   ShapeObject,
   GroupObject,
+  AnchorPoint,
+  PathObject,
   CanvasObject,
 } from './canvas'
 

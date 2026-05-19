@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useEffect, useRef } from 'react'
-import type { CanvasObject, ImageObject, ShapeObject, TextObject } from '@/types/canvas'
+import type { AnchorPoint, CanvasObject, ImageObject, PathObject, ShapeObject, TextObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
 
 interface ThumbnailState {
@@ -41,6 +41,60 @@ export const useThumbnailStore = create<ThumbnailState>((set) => ({
       return { thumbnails: rest }
     }),
 }))
+
+// ---------------------------------------------------------------------------
+// Path helpers — inlined here to avoid circular dep with CanvasPathNode.tsx
+// ---------------------------------------------------------------------------
+
+interface PathBBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function computePathBBox(anchors: AnchorPoint[]): PathBBox {
+  if (anchors.length === 0) return { x: 0, y: 0, width: 0, height: 0 }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const a of anchors) {
+    minX = Math.min(minX, a.x)
+    minY = Math.min(minY, a.y)
+    maxX = Math.max(maxX, a.x)
+    maxY = Math.max(maxY, a.y)
+    // Include control handles in bbox approximation
+    minX = Math.min(minX, a.x + a.handleIn.dx, a.x + a.handleOut.dx)
+    minY = Math.min(minY, a.y + a.handleIn.dy, a.y + a.handleOut.dy)
+    maxX = Math.max(maxX, a.x + a.handleIn.dx, a.x + a.handleOut.dx)
+    maxY = Math.max(maxY, a.y + a.handleIn.dy, a.y + a.handleOut.dy)
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+function anchorsToPathData(anchors: AnchorPoint[], closed: boolean): string {
+  if (anchors.length < 2) return ''
+  const parts: string[] = []
+  const first = anchors[0]
+  parts.push(`M ${first.x} ${first.y}`)
+  for (let i = 1; i < anchors.length; i++) {
+    const prev = anchors[i - 1]
+    const curr = anchors[i]
+    const cp1x = prev.x + prev.handleOut.dx
+    const cp1y = prev.y + prev.handleOut.dy
+    const cp2x = curr.x + curr.handleIn.dx
+    const cp2y = curr.y + curr.handleIn.dy
+    parts.push(`C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${curr.x} ${curr.y}`)
+  }
+  if (closed && anchors.length > 1) {
+    const last = anchors[anchors.length - 1]
+    const cp1x = last.x + last.handleOut.dx
+    const cp1y = last.y + last.handleOut.dy
+    const cp2x = first.x + first.handleIn.dx
+    const cp2y = first.y + first.handleIn.dy
+    parts.push(`C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${first.x} ${first.y}`)
+    parts.push('Z')
+  }
+  return parts.join(' ')
+}
 
 // ---------------------------------------------------------------------------
 // generateThumbnail — pure HTML Canvas 2D, no Konva dependency
@@ -137,6 +191,39 @@ export async function generateThumbnail(obj: CanvasObject): Promise<string> {
       ctx.fill()
       if (ctx.lineWidth > 0) ctx.stroke()
     }
+    return canvas.toDataURL('image/png')
+  }
+
+  if (obj.type === 'path') {
+    const path = obj as PathObject
+    ctx.fillStyle = '#2a2a2a'
+    ctx.fillRect(0, 0, SIZE, SIZE)
+    if (path.anchors.length < 2) return canvas.toDataURL('image/png')
+    const bbox = computePathBBox(path.anchors)
+    if (bbox.width < 1 && bbox.height < 1) return canvas.toDataURL('image/png')
+    const margin = 4
+    const scale = Math.min(
+      (SIZE - margin * 2) / Math.max(bbox.width, 1),
+      (SIZE - margin * 2) / Math.max(bbox.height, 1)
+    )
+    const offX = (SIZE - bbox.width * scale) / 2
+    const offY = (SIZE - bbox.height * scale) / 2
+    const scaledAnchors = path.anchors.map((a) => ({
+      x: (a.x - bbox.x) * scale + offX,
+      y: (a.y - bbox.y) * scale + offY,
+      handleIn: { dx: a.handleIn.dx * scale, dy: a.handleIn.dy * scale },
+      handleOut: { dx: a.handleOut.dx * scale, dy: a.handleOut.dy * scale },
+    }))
+    const svgPath = anchorsToPathData(scaledAnchors, path.closed)
+    if (!svgPath) return canvas.toDataURL('image/png')
+    const p2d = new Path2D(svgPath)
+    ctx.strokeStyle = path.stroke || '#4488ff'
+    ctx.lineWidth = Math.max(1, path.strokeWidth * scale)
+    if (path.fill && path.fill !== 'transparent') {
+      ctx.fillStyle = path.fill
+      ctx.fill(p2d)
+    }
+    ctx.stroke(p2d)
     return canvas.toDataURL('image/png')
   }
 

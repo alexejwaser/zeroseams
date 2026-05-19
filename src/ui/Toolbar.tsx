@@ -8,15 +8,23 @@ import type { FrameRatio } from '@/types/project'
 import type { CarouselProject } from '@/types/project'
 import type { ShapeKind } from '@/types/canvas'
 
-type ActiveTool = 'select' | 'text' | 'shape'
+type ActiveTool = 'select' | 'text' | 'shape' | 'pen'
 
 const TOOL_LABELS: Record<ActiveTool, string> = {
   select: 'Select',
   text: 'Text',
   shape: 'Shape',
+  pen: 'Pen',
 }
 
-const TOOLS: ActiveTool[] = ['select', 'text', 'shape']
+const TOOLS: ActiveTool[] = ['select', 'text', 'shape', 'pen']
+
+// Pen icon SVG for Pen tool button
+const PEN_ICON = (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ display: 'block' }}>
+    <path d="M9 1L11 3L4 10L1 11L2 8L9 1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+  </svg>
+)
 
 const RATIO_LABELS: Record<FrameRatio, string> = {
   square: '1:1',
@@ -373,8 +381,12 @@ export function Toolbar(): React.ReactElement {
               fontSize: 13,
               fontWeight: activeTool === tool ? 'bold' : 'normal',
               transition: 'background 0.15s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: tool === 'pen' ? 5 : 0,
             }}
           >
+            {tool === 'pen' && PEN_ICON}
             {TOOL_LABELS[tool]}
           </button>
         ))}

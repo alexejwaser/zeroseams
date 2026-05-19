@@ -1,5 +1,12 @@
 import React, { useRef, useEffect } from 'react'
-import { Rect as KonvaRect, Ellipse as KonvaEllipse, Line as KonvaLine, Transformer } from 'react-konva'
+import {
+  Rect as KonvaRect,
+  Ellipse as KonvaEllipse,
+  Line as KonvaLine,
+  Arrow as KonvaArrow,
+  Circle as KonvaCircle,
+  Transformer,
+} from 'react-konva'
 import type Konva from 'konva'
 import type { ShapeObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
@@ -28,6 +35,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
   const dragStartXRef = useRef(0)
   const dragStartYRef = useRef(0)
   const pendingDuplicateRef = useRef(false)
+  const lineDragOriginRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
   // Wire transformer when selected/locked state changes
   useEffect(() => {
@@ -35,22 +43,24 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
     const node = shapeRef.current
     if (!tr || !node) return
     if (isSelected) {
-      tr.nodes([node])
-      if (obj.locked) {
+      if (obj.kind === 'line' || obj.kind === 'arrow') {
+        tr.nodes([])
+        tr.getLayer()?.batchDraw()
+      } else if (obj.locked) {
+        tr.nodes([node])
         tr.enabledAnchors([])
         tr.rotateEnabled(false)
-      } else if (obj.kind === 'line' || obj.kind === 'arrow') {
-        tr.enabledAnchors(['middle-left', 'middle-right'])
-        tr.rotateEnabled(false)
+        tr.getLayer()?.batchDraw()
       } else {
+        tr.nodes([node])
         tr.enabledAnchors([
           'top-left', 'top-center', 'top-right',
           'middle-right', 'bottom-right', 'bottom-center',
           'bottom-left', 'middle-left',
         ])
         tr.rotateEnabled(true)
+        tr.getLayer()?.batchDraw()
       }
-      tr.getLayer()?.batchDraw()
     } else {
       tr.nodes([])
       tr.getLayer()?.draw()
@@ -114,6 +124,8 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
     }
   }
 
+  // --- rect/ellipse drag handlers ---
+
   function handleDragStart(): void {
     dragStartXRef.current = obj.x
     dragStartYRef.current = obj.y
@@ -173,6 +185,81 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
     }
   }
 
+  // --- line/arrow drag handlers ---
+
+  function handleLineDragStart(): void {
+    pendingDuplicateRef.current = false
+    lineDragOriginRef.current = {
+      x1: obj.x, y1: obj.y,
+      x2: obj.x2 ?? obj.x + obj.width,
+      y2: obj.y2 ?? obj.y + obj.height,
+    }
+    dragStartXRef.current = obj.x
+    dragStartYRef.current = obj.y
+  }
+
+  function handleLineDragMove(e: Konva.KonvaEventObject<DragEvent>): void {
+    const node = e.target as Konva.Line
+    const dx = node.x(); const dy = node.y()
+    const origin = lineDragOriginRef.current
+    if (!origin) return
+    const newX1 = origin.x1 + dx; const newY1 = origin.y1 + dy
+    const newX2 = origin.x2 + dx; const newY2 = origin.y2 + dy
+    node.x(0); node.y(0)
+    onGuidesChange([])
+    updateObject(obj.id, {
+      x: newX1, y: newY1,
+      x2: newX2, y2: newY2,
+      width: Math.abs(newX2 - newX1), height: Math.abs(newY2 - newY1),
+    })
+    if (altHeldRef.current && !pendingDuplicateRef.current) pendingDuplicateRef.current = true
+  }
+
+  function handleLineDragEnd(): void {
+    onGuidesChange([])
+    const origin = lineDragOriginRef.current
+    lineDragOriginRef.current = null
+    if (pendingDuplicateRef.current && origin) {
+      duplicateObjectAtOrigin(
+        obj.id,
+        { x: origin.x1, y: origin.y1 },
+        { x: obj.x, y: obj.y },
+      )
+      pendingDuplicateRef.current = false
+    } else {
+      commitUpdate(obj.id, {
+        x: obj.x, y: obj.y, x2: obj.x2, y2: obj.y2,
+        width: obj.width, height: obj.height,
+      })
+    }
+  }
+
+  // --- endpoint circle handlers ---
+
+  function handleEndpointDragMove(endpoint: 'a' | 'b', e: Konva.KonvaEventObject<DragEvent>): void {
+    const node = e.target as Konva.Circle
+    const nx = node.x(); const ny = node.y()
+    if (endpoint === 'a') {
+      const x2 = obj.x2 ?? obj.x + obj.width
+      const y2 = obj.y2 ?? obj.y + obj.height
+      updateObject(obj.id, { x: nx, y: ny, width: x2 - nx, height: y2 - ny })
+    } else {
+      updateObject(obj.id, { x2: nx, y2: ny, width: nx - obj.x, height: ny - obj.y })
+    }
+  }
+
+  function handleEndpointDragEnd(endpoint: 'a' | 'b', e: Konva.KonvaEventObject<DragEvent>): void {
+    const node = e.target as Konva.Circle
+    const nx = node.x(); const ny = node.y()
+    if (endpoint === 'a') {
+      const x2 = obj.x2 ?? obj.x + obj.width
+      const y2 = obj.y2 ?? obj.y + obj.height
+      commitUpdate(obj.id, { x: nx, y: ny, width: x2 - nx, height: y2 - ny })
+    } else {
+      commitUpdate(obj.id, { x2: nx, y2: ny, width: nx - obj.x, height: ny - obj.y })
+    }
+  }
+
   function handleTransform(e: Konva.KonvaEventObject<Event>): void {
     const node = e.target as Konva.Shape
     const { x, y } = getTopLeftFromNode(node)
@@ -198,7 +285,14 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
 
   return (
     <>
-      {isInMultiSelect && (
+      {isInMultiSelect && (obj.kind === 'line' || obj.kind === 'arrow') && (
+        <KonvaLine
+          points={[obj.x, obj.y, obj.x2 ?? obj.x + obj.width, obj.y2 ?? obj.y + obj.height]}
+          stroke="#0096ff" strokeWidth={1} strokeScaleEnabled={false}
+          perfectDrawEnabled={false} listening={false}
+        />
+      )}
+      {isInMultiSelect && obj.kind !== 'line' && obj.kind !== 'arrow' && (
         <KonvaRect
           x={obj.x}
           y={obj.y}
@@ -267,29 +361,87 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
         />
       )}
 
-      {(obj.kind === 'line' || obj.kind === 'arrow') && (
-        <KonvaLine
-          ref={shapeRef as React.RefObject<Konva.Line>}
-          x={obj.x}
-          y={obj.y}
-          points={[0, 0, obj.width, obj.height]}
-          stroke={obj.stroke || obj.fill}
-          strokeWidth={Math.max(obj.strokeWidth, 2)}
-          strokeScaleEnabled={false}
-          opacity={obj.opacity}
-          rotation={obj.rotation}
-          perfectDrawEnabled={false}
-          draggable={!obj.locked}
-          onClick={handleClick}
-          onTap={onSelect}
-          onDragStart={handleDragStart}
-          onDragMove={handleDragMove}
-          onDragEnd={handleDragEnd}
-          onTransform={handleTransform}
-          onTransformEnd={handleTransformEnd}
-          onContextMenu={handleContextMenu}
-        />
-      )}
+      {(obj.kind === 'line' || obj.kind === 'arrow') && (() => {
+        const x1 = obj.x; const y1 = obj.y
+        const x2 = obj.x2 ?? obj.x + obj.width
+        const y2 = obj.y2 ?? obj.y + obj.height
+        const color = (obj.stroke && obj.stroke !== 'transparent') ? obj.stroke : obj.fill
+        const lw = Math.max(obj.strokeWidth, 2)
+        return (
+          <>
+            {/* Fat transparent hit+drag area for body move */}
+            <KonvaLine
+              ref={shapeRef as React.RefObject<Konva.Line>}
+              points={[x1, y1, x2, y2]}
+              stroke="transparent"
+              strokeWidth={Math.max(lw, 16)}
+              strokeScaleEnabled={false}
+              listening={!obj.locked}
+              draggable={!obj.locked}
+              onClick={handleClick}
+              onTap={onSelect}
+              onDragStart={handleLineDragStart}
+              onDragMove={handleLineDragMove}
+              onDragEnd={handleLineDragEnd}
+              onContextMenu={handleContextMenu}
+            />
+            {obj.kind === 'line' && (
+              <KonvaLine
+                points={[x1, y1, x2, y2]}
+                stroke={color}
+                strokeWidth={lw}
+                strokeScaleEnabled={false}
+                opacity={obj.opacity}
+                perfectDrawEnabled={false}
+                listening={false}
+              />
+            )}
+            {obj.kind === 'arrow' && (
+              <KonvaArrow
+                points={[x1, y1, x2, y2]}
+                stroke={color}
+                fill={color}
+                strokeWidth={lw}
+                pointerLength={lw * 4}
+                pointerWidth={lw * 3}
+                strokeScaleEnabled={false}
+                opacity={obj.opacity}
+                perfectDrawEnabled={false}
+                listening={false}
+              />
+            )}
+            {isSelected && (
+              <KonvaLine
+                points={[x1, y1, x2, y2]}
+                stroke="#0096ff"
+                strokeWidth={1}
+                strokeScaleEnabled={false}
+                dash={[6, 3]}
+                perfectDrawEnabled={false}
+                listening={false}
+              />
+            )}
+            {isSelected && !obj.locked && (
+              <>
+                <KonvaCircle
+                  x={x1} y={y1} radius={6}
+                  fill="#fff" stroke="#0096ff" strokeWidth={2}
+                  draggable
+                  onDragMove={(e) => handleEndpointDragMove('a', e)}
+                  onDragEnd={(e) => handleEndpointDragEnd('a', e)}
+                />
+                <KonvaCircle
+                  x={x2} y={y2} radius={6}
+                  fill="#fff" stroke="#0096ff" strokeWidth={2}
+                  draggable
+                  onDragMove={(e) => handleEndpointDragMove('b', e)}
+                  onDragEnd={(e) => handleEndpointDragEnd('b', e)}
+                />
+              </>
+            )}
+          </>
+        )
+      })()}
 
       <Transformer
         ref={transformerRef}

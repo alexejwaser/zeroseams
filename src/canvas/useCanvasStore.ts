@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CanvasObject, ImageObject, ShapeKind } from '@/types/canvas'
+import type { CanvasObject, ImageObject, ShapeObject, PathObject, ShapeKind } from '@/types/canvas'
 import type { Frame, FrameRatio, CarouselProject } from '@/types/project'
 
 type HistorySnapshot = Pick<
@@ -35,7 +35,7 @@ interface CanvasState {
   frameHeight: number
   frames: Frame[]
   backgroundColor: string
-  activeTool: 'select' | 'text' | 'shape'
+  activeTool: 'select' | 'text' | 'shape' | 'pen'
   past: HistorySnapshot[]
   future: HistorySnapshot[]
   // Volatile UI state — NOT in HistorySnapshot
@@ -52,7 +52,7 @@ interface CanvasState {
   addToSelection: (id: string) => void
   setSelectedIds: (ids: string[]) => void
   setFrameCount: (n: number) => void
-  setActiveTool: (tool: 'select' | 'text' | 'shape') => void
+  setActiveTool: (tool: 'select' | 'text' | 'shape' | 'pen') => void
   reorderObjects: (fromId: string, toId: string, side: 'before' | 'after') => void
   toggleLock: (id: string) => void
   alignObjects: (anchor: 'left' | 'right' | 'top' | 'bottom' | 'centerH' | 'centerV') => void
@@ -63,6 +63,8 @@ interface CanvasState {
   undo: () => void
   redo: () => void
   clearContentEditMode: () => void
+  clearPathEditMode: () => void
+  moveObject: (id: string, dx: number, dy: number) => void
   setContextMenu: (state: { x: number; y: number; targetId: string | null } | null) => void
   selectAll: () => void
   bringForward: (id: string) => void
@@ -113,13 +115,21 @@ export const useCanvasStore = create<CanvasState>((set) => {
     contextMenu: null,
     activeShapeKind: 'rect',
 
-    addObject: (obj) =>
-      set((state) => ({
+    addObject: (obj) => {
+      let normalized = obj
+      if (obj.type === 'shape') {
+        const s = obj as ShapeObject
+        if ((s.kind === 'line' || s.kind === 'arrow') && s.x2 === undefined) {
+          normalized = { ...s, x2: s.x + s.width, y2: s.y + s.height } as CanvasObject
+        }
+      }
+      return set((state) => ({
         past: pushHistoryFrom(state),
         future: [],
-        objects: { ...state.objects, [obj.id]: obj },
-        objectOrder: [...state.objectOrder, obj.id],
-      })),
+        objects: { ...state.objects, [normalized.id]: normalized },
+        objectOrder: [...state.objectOrder, normalized.id],
+      }))
+    },
 
     updateObject: (id, patch) =>
       set((state) => {
@@ -469,6 +479,49 @@ export const useCanvasStore = create<CanvasState>((set) => {
         return { objects: updated }
       }),
 
+    clearPathEditMode: () =>
+      set((state) => {
+        const updated: Record<string, CanvasObject> = {}
+        let changed = false
+        for (const [id, obj] of Object.entries(state.objects)) {
+          if (obj.type === 'path' && (obj as PathObject).pathEditMode) {
+            updated[id] = { ...obj, pathEditMode: false } as CanvasObject
+            changed = true
+          } else {
+            updated[id] = obj
+          }
+        }
+        if (!changed) return state
+        return { objects: updated }
+      }),
+
+    moveObject: (id, dx, dy) =>
+      set((state) => {
+        const obj = state.objects[id]
+        if (!obj) return state
+        let moved: CanvasObject
+        if (obj.type === 'shape') {
+          const s = obj as ShapeObject
+          moved = { ...s, x: s.x + dx, y: s.y + dy,
+            ...(s.x2 !== undefined ? { x2: s.x2 + dx, y2: (s.y2 ?? s.y) + dy } : {}) } as CanvasObject
+        } else if (obj.type === 'path') {
+          const p = obj as PathObject
+          moved = { ...p, x: p.x + dx, y: p.y + dy,
+            anchors: p.anchors.map((a) => ({ ...a, x: a.x + dx, y: a.y + dy })) } as CanvasObject
+        } else if (obj.type === 'image') {
+          const img = obj as ImageObject
+          moved = { ...img, x: img.x + dx, y: img.y + dy,
+            frameX: img.frameX + dx, frameY: img.frameY + dy } as CanvasObject
+        } else {
+          moved = { ...obj, x: obj.x + dx, y: obj.y + dy } as CanvasObject
+        }
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objects: { ...state.objects, [id]: moved },
+        }
+      }),
+
     setContextMenu: (menuState) => set({ contextMenu: menuState }),
 
     setActiveShapeKind: (kind) => set({ activeShapeKind: kind }),
@@ -588,6 +641,12 @@ export const useCanvasStore = create<CanvasState>((set) => {
             x: obj.x + offsetX,
             y: obj.y + offsetY,
           } as CanvasObject
+          if (obj.type === 'shape') {
+            const s = obj as ShapeObject
+            if ((s.kind === 'line' || s.kind === 'arrow') && s.x2 !== undefined) {
+              duplicate = { ...duplicate, x2: s.x2 + offsetX, y2: (s.y2 ?? s.y) + offsetY } as CanvasObject
+            }
+          }
         }
         // Insert duplicate right after the source in objectOrder
         const srcIdx = state.objectOrder.indexOf(id)

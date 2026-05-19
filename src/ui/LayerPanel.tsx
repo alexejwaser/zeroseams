@@ -9,6 +9,7 @@ function typeLabel(type: CanvasObjectType): string {
     case 'text': return 'Text'
     case 'shape': return 'Shape'
     case 'group': return 'Group'
+    case 'path': return 'Path'
   }
 }
 
