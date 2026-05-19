@@ -150,20 +150,34 @@ Guard: no-op when focus is in INPUT / TEXTAREA / contentEditable.
 
 Old `useDeleteShortcut.ts` and `useUndoRedoShortcuts.ts` are superseded by `useKeyboardShortcuts.ts`.
 
-## Context Menu (sprint 11)
+## Export (sprint 12)
+Export lives in `src/ui/Toolbar.tsx` — right side, opens a compact panel below the button.
+- Three modes: **All frames** (default), **Single** (one frame number input), **Range** (From / To inputs), all 1-indexed in UI
+- `exportFrames(stage, frameCount, frameWidth, frameHeight, startFrame, endFrame)` in `src/canvas/exportFrames.ts` — `startFrame`/`endFrame` are 0-indexed optional params defaulting to full range
+- `downloadFrames(blobs)` unchanged — saves via Electron IPC, names `frame-N.png`
+- Panel dismisses on outside mousedown (same pattern as ContextMenu)
+- No export button exists outside the Toolbar
+
+## Context Menu (sprint 11 + sprint 12)
 `src/ui/ContextMenu.tsx` — React portal to `document.body`, `position: fixed`.
 - Right-click on a canvas object → object-level menu (Duplicate, Bring/Send, Lock, Delete)
 - Right-click on empty canvas → canvas-level menu (Add/Remove Frame)
+- **Image-only items** (sprint 12): separator + Remove Background, Fit Frame to Content, Fill Frame with Content
+  - Remove Background: disabled while a `background-removal` AI op is running for that object
+  - Fit/Fill: use `commitUpdate` (undo-able), same math as Properties Panel
 - State: `contextMenu: { x, y, targetId } | null` in `useCanvasStore` — volatile, NOT in `HistorySnapshot`
 - Dismiss: click outside, Escape, any enabled menu item click
 - Disabled items do not call `setContextMenu(null)` — menu stays open
 
-## Layer Thumbnails (sprint 11)
+## Layer Thumbnails (sprint 11 + sprint 12)
 `src/canvas/useThumbnailStore.ts` — separate Zustand store, never in HistorySnapshot.
-- Thumbnails generated via HTML Canvas 2D (no Konva) at 40×40
+- Thumbnails generated via HTML Canvas 2D (no Konva) at 60×60 (`SIZE` constant)
 - Generation triggers only on `past.length` changes (i.e. after `commitUpdate`), not during live drag
 - `useThumbnailGenerator()` hook mounted once in CarouselStage
-- LayerPanel reads `useThumbnailStore((s) => s.thumbnails)` to display 28×28 cells per row
+- LayerPanel displays 44×44 thumbnail cells; row height 48px; no type-icon column
+
+## Image Drop Filename (sprint 12)
+`src/canvas/useImageDrop.ts` captures `file.name.replace(/\.[^.]+$/, '')` and stores it as `name` on the created object. LayerPanel's `getDisplayName()` already prefers `obj.name` over the fallback `"Image N"` label.
 
 ## Option+Drag Duplicate (sprint 11)
 Hold Alt/Option while dragging to leave a copy at the original position.

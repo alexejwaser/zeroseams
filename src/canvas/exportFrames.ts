@@ -16,6 +16,8 @@ export async function exportFrames(
   frameCount: number,
   frameWidth: number,
   frameHeight: number,
+  startFrame = 0,
+  endFrame = frameCount - 1,
 ): Promise<Blob[]> {
   // 1. Hide Transformer handles so selection UI is absent from export
   const transformers = stage.find<Konva.Transformer>('Transformer')
@@ -48,44 +50,7 @@ export async function exportFrames(
     // fullCanvas is now (frameCount * frameWidth * PIXEL_RATIO) × (frameHeight * PIXEL_RATIO)
     console.log('[export] fullCanvas:', fullCanvas.width, '×', fullCanvas.height)
 
-    // Frame 0 — explicit, no loop ambiguity
-    const crop0 = document.createElement('canvas')
-    crop0.width = frameWidth * PIXEL_RATIO
-    crop0.height = frameHeight * PIXEL_RATIO
-    const ctx0 = crop0.getContext('2d')
-    if (!ctx0) throw new Error('Failed to get 2d context for frame 0')
-    ctx0.drawImage(
-      fullCanvas,
-      0, 0,
-      frameWidth * PIXEL_RATIO, frameHeight * PIXEL_RATIO,
-      0, 0,
-      frameWidth * PIXEL_RATIO, frameHeight * PIXEL_RATIO,
-    )
-    const blob0 = await new Promise<Blob | null>((resolve) => crop0.toBlob((b) => resolve(b), 'image/png'))
-    console.log(`[export] frame 0: src x=0 blob=${blob0 ? blob0.size : 'NULL'}`)
-    if (blob0) blobs.push(blob0)
-
-    // Frame 1 — explicit, no loop ambiguity
-    if (frameCount > 1) {
-      const crop1 = document.createElement('canvas')
-      crop1.width = frameWidth * PIXEL_RATIO
-      crop1.height = frameHeight * PIXEL_RATIO
-      const ctx1 = crop1.getContext('2d')
-      if (!ctx1) throw new Error('Failed to get 2d context for frame 1')
-      ctx1.drawImage(
-        fullCanvas,
-        frameWidth * PIXEL_RATIO, 0,
-        frameWidth * PIXEL_RATIO, frameHeight * PIXEL_RATIO,
-        0, 0,
-        frameWidth * PIXEL_RATIO, frameHeight * PIXEL_RATIO,
-      )
-      const blob1 = await new Promise<Blob | null>((resolve) => crop1.toBlob((b) => resolve(b), 'image/png'))
-      console.log(`[export] frame 1: src x=${frameWidth * PIXEL_RATIO} blob=${blob1 ? blob1.size : 'NULL'}`)
-      if (blob1) blobs.push(blob1)
-    }
-
-    // Dynamic fallback for frameCount > 2
-    for (let i = 2; i < frameCount; i++) {
+    for (let i = startFrame; i <= endFrame; i++) {
       const cropCanvas = document.createElement('canvas')
       cropCanvas.width = frameWidth * PIXEL_RATIO
       cropCanvas.height = frameHeight * PIXEL_RATIO
@@ -95,9 +60,9 @@ export async function exportFrames(
 
       ctx.drawImage(
         fullCanvas,
-        i * frameWidth * PIXEL_RATIO, 0,            // source origin
+        i * frameWidth * PIXEL_RATIO, 0,             // source origin
         frameWidth * PIXEL_RATIO, frameHeight * PIXEL_RATIO, // source size
-        0, 0,                                        // dest origin
+        0, 0,                                         // dest origin
         frameWidth * PIXEL_RATIO, frameHeight * PIXEL_RATIO, // dest size
       )
 

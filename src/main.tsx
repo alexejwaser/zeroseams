@@ -1,32 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import {
-  CarouselStage,
-  exportFrames,
-  downloadFrames,
-  getStageInstance,
-  useCanvasStore,
-  FRAME_WIDTH,
-} from '@/canvas'
+import { CarouselStage } from '@/canvas'
 import { Toolbar, LayerPanel, PropertiesPanel, ContextMenu } from '@/ui'
 import { AIProvider } from '@/ai'
 
 function App(): React.ReactElement {
-  const frameCount = useCanvasStore((s) => s.frameCount)
-  const frameHeight = useCanvasStore((s) => s.frameHeight)
-
-  async function handleExport(): Promise<void> {
-    try {
-      const stage = getStageInstance()
-      if (!stage) return
-      const blobs = await exportFrames(stage, frameCount, FRAME_WIDTH, frameHeight)
-      await downloadFrames(blobs)
-    } catch (err) {
-      console.error('[export] failed:', err)
-      alert(`Export failed: ${String(err)}`)
-    }
-  }
-
   return (
     <div
       style={{
@@ -66,23 +44,6 @@ function App(): React.ReactElement {
           }}
         >
           <CarouselStage />
-          <button
-            onClick={() => { void handleExport() }}
-            style={{
-              marginTop: 16,
-              padding: '8px 24px',
-              background: '#0af',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: 14,
-              flexShrink: 0,
-            }}
-          >
-            Export Frames
-          </button>
         </div>
 
         <PropertiesPanel />

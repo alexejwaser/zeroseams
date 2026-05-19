@@ -3,15 +3,6 @@ import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useThumbnailStore } from '@/canvas/useThumbnailStore'
 import type { CanvasObject, CanvasObjectType } from '@/types/canvas'
 
-function typeIcon(type: CanvasObjectType): string {
-  switch (type) {
-    case 'image': return '🖼'
-    case 'text': return 'T'
-    case 'shape': return '◻'
-    case 'group': return '📦'
-  }
-}
-
 function typeLabel(type: CanvasObjectType): string {
   switch (type) {
     case 'image': return 'Image'
@@ -152,14 +143,14 @@ export function LayerPanel(): React.ReactElement {
               }}
               onDragEnd={() => { dragId.current = null; setDropPos(null) }}
               style={{
-                height: 32,
+                height: 48,
                 display: 'flex',
                 alignItems: 'center',
                 padding: '0 8px',
                 background: isSelected ? 'rgba(0,170,255,0.15)' : 'transparent',
                 cursor: 'pointer',
                 userSelect: 'none',
-                gap: 4,
+                gap: 6,
                 borderLeft: isSelected ? '2px solid #0af' : '2px solid transparent',
                 borderTop: isDropBefore ? '2px solid #0af' : '2px solid transparent',
                 borderBottom: isDropAfter ? '2px solid #0af' : '2px solid transparent',
@@ -169,8 +160,8 @@ export function LayerPanel(): React.ReactElement {
               {/* Thumbnail */}
               <div
                 style={{
-                  width: 28,
-                  height: 28,
+                  width: 44,
+                  height: 44,
                   flexShrink: 0,
                   borderRadius: 3,
                   overflow: 'hidden',
@@ -189,21 +180,6 @@ export function LayerPanel(): React.ReactElement {
                   <div style={{ width: '100%', height: '100%', background: '#222' }} />
                 )}
               </div>
-
-              {/* Type icon */}
-              <span
-                style={{
-                  fontSize: obj.type === 'text' ? 13 : 14,
-                  flexShrink: 0,
-                  width: 18,
-                  textAlign: 'center',
-                  color: obj.type === 'text' ? '#0af' : undefined,
-                  fontWeight: obj.type === 'text' ? 'bold' : 'normal',
-                  pointerEvents: 'none',
-                }}
-              >
-                {typeIcon(obj.type)}
-              </span>
 
               {/* Name */}
               <span

@@ -26,6 +26,8 @@ export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): voi
       )
       if (!file) return
 
+      const rawName = file.name.replace(/\.[^.]+$/, '')
+
       const reader = new FileReader()
       reader.onload = (readerEvent) => {
         const dataUrl = readerEvent.target?.result
@@ -46,6 +48,7 @@ export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): voi
             id: crypto.randomUUID(),
             type: 'image',
             scope: 'global',
+            name: rawName,
             src: dataUrl,
             backgroundRemoved: false,
             frameX,

@@ -47,7 +47,7 @@ export const useThumbnailStore = create<ThumbnailState>((set) => ({
 // ---------------------------------------------------------------------------
 
 export async function generateThumbnail(obj: CanvasObject): Promise<string> {
-  const SIZE = 40
+  const SIZE = 60
   const canvas = document.createElement('canvas')
   canvas.width = SIZE
   canvas.height = SIZE
@@ -59,7 +59,7 @@ export async function generateThumbnail(obj: CanvasObject): Promise<string> {
     return await new Promise<string>((resolve) => {
       const el = new Image()
       el.onload = () => {
-        // Determine scale to fit the frame (proportional) into 40x40
+        // Determine scale to fit the frame (proportional) into SIZE×SIZE
         const frameAspect = img.frameWidth / img.frameHeight
         let drawW = SIZE
         let drawH = SIZE
@@ -102,7 +102,7 @@ export async function generateThumbnail(obj: CanvasObject): Promise<string> {
     ctx.fillRect(0, 0, SIZE, SIZE)
 
     const sample = txt.text.slice(0, 20)
-    // Scale font to fit 40px wide
+    // Scale font to fit SIZE px wide
     const maxFontSize = Math.min(txt.fontSize, SIZE * 0.4)
     ctx.fillStyle = txt.fill
     ctx.font = `${maxFontSize}px ${txt.fontFamily}`

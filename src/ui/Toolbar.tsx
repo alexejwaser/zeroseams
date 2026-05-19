@@ -1,5 +1,8 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
+import { FRAME_WIDTH } from '@/canvas/constants'
+import { getStageInstance } from '@/canvas/CarouselStage'
+import { exportFrames, downloadFrames } from '@/canvas/exportFrames'
 import { useSaveStatusStore, type SaveStatus } from './useSaveStatusStore'
 import type { FrameRatio } from '@/types/project'
 
@@ -57,6 +60,66 @@ export function Toolbar(): React.ReactElement {
   const saveStatus = useSaveStatusStore((s) => s.status)
   const ratio = useCanvasStore((s) => s.ratio)
   const setRatio = useCanvasStore((s) => s.setRatio)
+  const frameHeight = useCanvasStore((s) => s.frameHeight)
+
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportMode, setExportMode] = useState<'all' | 'single' | 'range'>('all')
+  const [exportSingle, setExportSingle] = useState(1)
+  const [exportFrom, setExportFrom] = useState(1)
+  const [exportTo, setExportTo] = useState(frameCount)
+  const [exporting, setExporting] = useState(false)
+
+  const exportWrapperRef = useRef<HTMLDivElement>(null)
+
+  // Keep exportTo in sync when frameCount changes
+  useEffect(() => {
+    setExportTo(frameCount)
+  }, [frameCount])
+
+  // Dismiss export panel on outside click
+  useEffect(() => {
+    if (!exportOpen) return
+
+    function handleMouseDown(e: MouseEvent): void {
+      if (exportWrapperRef.current != null && !exportWrapperRef.current.contains(e.target as Node)) {
+        setExportOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => { document.removeEventListener('mousedown', handleMouseDown) }
+  }, [exportOpen])
+
+  async function handleExportAction(): Promise<void> {
+    const stage = getStageInstance()
+    if (!stage) return
+
+    let start: number
+    let end: number
+
+    if (exportMode === 'all') {
+      start = 0
+      end = frameCount - 1
+    } else if (exportMode === 'single') {
+      start = exportSingle - 1
+      end = exportSingle - 1
+    } else {
+      start = exportFrom - 1
+      end = exportTo - 1
+    }
+
+    setExporting(true)
+    try {
+      const blobs = await exportFrames(stage, frameCount, FRAME_WIDTH, frameHeight, start, end)
+      await downloadFrames(blobs)
+    } catch (err) {
+      console.error('[export] failed:', err)
+      alert(`Export failed: ${String(err)}`)
+    } finally {
+      setExporting(false)
+      setExportOpen(false)
+    }
+  }
 
   function handleToolClick(tool: ActiveTool): void {
     setActiveTool(tool)
@@ -86,6 +149,33 @@ export function Toolbar(): React.ReactElement {
     opacity: disabled ? 0.35 : 1,
     transition: 'opacity 0.15s',
   })
+
+  const segmentButtonStyle = (active: boolean): React.CSSProperties => ({
+    padding: '3px 10px',
+    height: 24,
+    background: active ? '#0af' : 'transparent',
+    color: active ? '#fff' : '#aaa',
+    border: 'none',
+    borderRadius: 3,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: active ? 'bold' : 'normal',
+    transition: 'background 0.15s, color 0.15s',
+    whiteSpace: 'nowrap' as const,
+  })
+
+  const numberInputStyle: React.CSSProperties = {
+    width: 48,
+    height: 24,
+    background: '#333',
+    color: '#fff',
+    border: '1px solid #444',
+    borderRadius: 3,
+    fontSize: 12,
+    textAlign: 'center',
+    padding: '0 4px',
+    boxSizing: 'border-box',
+  }
 
   return (
     <div
@@ -162,7 +252,7 @@ export function Toolbar(): React.ReactElement {
         ))}
       </div>
 
-      {/* Right: ratio toggle + frame count control + save status */}
+      {/* Right: ratio toggle + frame count control + export + save status */}
       <div
         style={{
           display: 'flex',
@@ -262,6 +352,140 @@ export function Toolbar(): React.ReactElement {
         >
           +
         </button>
+
+        <div style={{ width: 8 }} />
+
+        {/* Export button + panel */}
+        <div ref={exportWrapperRef} style={{ position: 'relative' }}>
+          <button
+            onClick={() => { setExportOpen((v) => !v) }}
+            style={{
+              padding: '4px 14px',
+              height: 30,
+              background: exportOpen ? '#0af' : '#333',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 'normal',
+              transition: 'background 0.15s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Export
+          </button>
+
+          {exportOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                zIndex: 1000,
+                marginTop: 6,
+                background: '#1e1e1e',
+                border: '1px solid #3a3a3a',
+                borderRadius: 8,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                padding: '12px',
+                minWidth: 220,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              {/* Mode segmented control */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  background: '#222',
+                  borderRadius: 4,
+                  padding: '2px',
+                  border: '1px solid #444',
+                }}
+              >
+                {(['all', 'single', 'range'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => { setExportMode(mode) }}
+                    style={segmentButtonStyle(exportMode === mode)}
+                  >
+                    {mode === 'all' ? 'All frames' : mode === 'single' ? 'Single' : 'Range'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Mode-specific inputs */}
+              {exportMode === 'single' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#aaa', fontSize: 12 }}>Frame</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={frameCount}
+                    value={exportSingle}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(frameCount, Number(e.target.value)))
+                      setExportSingle(v)
+                    }}
+                    style={numberInputStyle}
+                  />
+                </div>
+              )}
+
+              {exportMode === 'range' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#aaa', fontSize: 12 }}>From</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={frameCount}
+                    value={exportFrom}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(frameCount, Number(e.target.value)))
+                      setExportFrom(v)
+                    }}
+                    style={numberInputStyle}
+                  />
+                  <span style={{ color: '#aaa', fontSize: 12 }}>To</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={frameCount}
+                    value={exportTo}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(frameCount, Number(e.target.value)))
+                      setExportTo(v)
+                    }}
+                    style={numberInputStyle}
+                  />
+                </div>
+              )}
+
+              {/* Export action button */}
+              <button
+                onClick={() => { void handleExportAction() }}
+                disabled={exporting}
+                style={{
+                  padding: '6px 0',
+                  background: exporting ? '#555' : '#0af',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: exporting ? 'default' : 'pointer',
+                  fontSize: 13,
+                  fontWeight: 'bold',
+                  transition: 'background 0.15s',
+                }}
+              >
+                {exporting ? 'Exporting…' : 'Export'}
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Save status pill */}
         <div

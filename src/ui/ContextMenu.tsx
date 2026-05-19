@@ -1,6 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
+import { useBackgroundRemoval } from '../ai/useBackgroundRemoval'
+import { useAIStore } from '../ai/useAIStore'
+import type { ImageObject } from '../types/canvas'
 
 interface MenuItemProps {
   label: string
@@ -76,6 +79,10 @@ export function ContextMenu(): React.ReactElement | null {
   const toggleLock = useCanvasStore((s) => s.toggleLock)
   const removeObject = useCanvasStore((s) => s.removeObject)
   const setFrameCount = useCanvasStore((s) => s.setFrameCount)
+  const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+
+  const { removeBg } = useBackgroundRemoval()
+  const operations = useAIStore((s) => s.operations)
 
   const menuRef = useRef<HTMLDivElement>(null)
   const [clampedPos, setClampedPos] = useState<{ left: number; top: number } | null>(null)
@@ -152,6 +159,12 @@ export function ContextMenu(): React.ReactElement | null {
         (() => {
           const obj = objects[targetId]
           const locked = obj?.locked ?? false
+          const isImage = obj?.type === 'image'
+          const bgOpRunning = isImage && Object.values(operations).some(
+            (op) => op.type === 'background-removal' &&
+                     op.targetObjectId === targetId &&
+                     op.status === 'running'
+          )
           return (
             <>
               <MenuItem
@@ -196,6 +209,49 @@ export function ContextMenu(): React.ReactElement | null {
                 kbd="⌫"
                 onClick={() => { removeObject(targetId); dismiss() }}
               />
+              {isImage && (
+                <>
+                  <hr style={{ borderColor: '#3a3a3a', margin: '4px 0', border: 'none', borderTop: '1px solid #3a3a3a' }} />
+                  <MenuItem
+                    label={bgOpRunning ? 'Removing Background…' : 'Remove Background'}
+                    disabled={bgOpRunning || locked}
+                    onClick={() => { void removeBg(targetId); setContextMenu(null) }}
+                  />
+                  <MenuItem
+                    label="Fit Frame to Content"
+                    disabled={locked}
+                    onClick={() => {
+                      const img = obj as ImageObject
+                      const θ = (img.rotation ?? 0) * (Math.PI / 180)
+                      const dx = img.contentOffsetX * Math.cos(θ) - img.contentOffsetY * Math.sin(θ)
+                      const dy = img.contentOffsetX * Math.sin(θ) + img.contentOffsetY * Math.cos(θ)
+                      commitUpdate(targetId, {
+                        frameX: img.frameX + dx, frameY: img.frameY + dy,
+                        x: img.frameX + dx, y: img.frameY + dy,
+                        frameWidth: img.contentWidth, frameHeight: img.contentHeight,
+                        width: img.contentWidth, height: img.contentHeight,
+                        contentOffsetX: 0, contentOffsetY: 0,
+                      })
+                      setContextMenu(null)
+                    }}
+                  />
+                  <MenuItem
+                    label="Fill Frame with Content"
+                    disabled={locked}
+                    onClick={() => {
+                      const img = obj as ImageObject
+                      const scale = Math.max(img.frameWidth / img.contentWidth, img.frameHeight / img.contentHeight)
+                      commitUpdate(targetId, {
+                        contentWidth: img.contentWidth * scale,
+                        contentHeight: img.contentHeight * scale,
+                        contentOffsetX: (img.frameWidth - img.contentWidth * scale) / 2,
+                        contentOffsetY: (img.frameHeight - img.contentHeight * scale) / 2,
+                      })
+                      setContextMenu(null)
+                    }}
+                  />
+                </>
+              )}
             </>
           )
         })()
