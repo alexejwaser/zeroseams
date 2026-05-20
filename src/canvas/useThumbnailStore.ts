@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useEffect, useRef } from 'react'
 import type { AnchorPoint, CanvasObject, ImageObject, PathObject, ShapeObject, TextObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
+import { spanText } from './textSpans'
 
 interface ThumbnailState {
   thumbnails: Record<string, string>
@@ -155,7 +156,7 @@ export async function generateThumbnail(obj: CanvasObject): Promise<string> {
     ctx.fillStyle = '#2a2a2a'
     ctx.fillRect(0, 0, SIZE, SIZE)
 
-    const sample = txt.text.slice(0, 20)
+    const sample = spanText(txt).slice(0, 20)
     // Scale font to fit SIZE px wide
     const maxFontSize = Math.min(txt.fontSize, SIZE * 0.4)
     ctx.fillStyle = txt.fill

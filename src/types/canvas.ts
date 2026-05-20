@@ -66,16 +66,37 @@ export interface ImageObject extends BaseCanvasObject {
   contentEditMode: boolean
 }
 
+export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold italic'
+
+/** Per-character style overrides — undefined fields inherit from TextObject layer defaults */
+export interface TextSpanStyle {
+  fontFamily?: string
+  fontSize?: number
+  fontStyle?: FontStyle
+  fill?: string
+  letterSpacing?: number
+}
+
+/** A contiguous run of text with optional style overrides */
+export interface TextSpan {
+  text: string
+  style?: TextSpanStyle
+}
+
 export interface TextObject extends BaseCanvasObject {
   type: 'text'
-  text: string
+  // Layer-level defaults — apply when a span has no override for that property
   fontFamily: string
   fontSize: number
-  fontStyle: 'normal' | 'bold' | 'italic' | 'bold italic'
+  fontStyle: FontStyle
   align: 'left' | 'center' | 'right'
   fill: string
   letterSpacing: number
   lineHeight: number
+  // Span model — replaces the old flat `text` string.
+  // Full text = spans.map(s => s.text).join('')
+  // Old projects saved with a flat `text` field load as a single span (migration in store).
+  spans: TextSpan[]
 }
 
 export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'arrow'

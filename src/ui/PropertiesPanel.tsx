@@ -3,8 +3,17 @@ import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useAI } from '@/ai'
 import { useAIStore } from '@/ai'
 import type { BackgroundRemovalOperation } from '@/types/ai'
-import type { ImageObject, TextObject, ShapeObject, PathObject } from '@/types/canvas'
+import type { ImageObject, TextObject, ShapeObject, PathObject, FontStyle } from '@/types/canvas'
 import type { Frame } from '@/types/project'
+import {
+  getSelectionStyle,
+  applyStyleToRange,
+  applyStyleToAll,
+} from '@/canvas/textSpans'
+
+// ---------------------------------------------------------------------------
+// NumberField — normal (always has a value)
+// ---------------------------------------------------------------------------
 
 interface NumberFieldProps {
   label: string
@@ -71,6 +80,83 @@ function NumberField({
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// MixedNumberField — for per-span properties that may be mixed across selection
+// ---------------------------------------------------------------------------
+
+interface MixedNumberFieldProps {
+  label: string
+  value: number | undefined   // undefined = mixed
+  step?: number
+  min?: number
+  max?: number
+  onChange: (val: number) => void
+}
+
+function MixedNumberField({
+  label,
+  value,
+  step = 1,
+  min,
+  max,
+  onChange,
+}: MixedNumberFieldProps): React.ReactElement {
+  const isMixed = value === undefined
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    const parsed = parseFloat(e.target.value)
+    if (!isNaN(parsed)) {
+      onChange(parsed)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        marginBottom: 8,
+        gap: 8,
+      }}
+    >
+      <label
+        style={{
+          color: '#aaa',
+          fontSize: 12,
+          width: 64,
+          flexShrink: 0,
+        }}
+      >
+        {label}
+      </label>
+      <input
+        type="number"
+        value={isMixed ? '' : value}
+        placeholder={isMixed ? '—' : undefined}
+        step={step}
+        min={min}
+        max={max}
+        onChange={handleChange}
+        style={{
+          flex: 1,
+          background: '#1a1a1a',
+          border: '1px solid #444',
+          borderRadius: 4,
+          color: isMixed ? '#666' : '#fff',
+          fontSize: 13,
+          padding: '3px 6px',
+          boxSizing: 'border-box',
+          outline: 'none',
+        }}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ColorInput — normal
+// ---------------------------------------------------------------------------
 
 interface ColorInputProps {
   value: string
@@ -151,6 +237,113 @@ function ColorInput({ value, onChange }: ColorInputProps): React.ReactElement {
   )
 }
 
+// ---------------------------------------------------------------------------
+// MixedColorInput — for per-span fill that may be mixed
+// ---------------------------------------------------------------------------
+
+interface MixedColorInputProps {
+  value: string | undefined   // undefined = mixed
+  onChange: (color: string) => void
+}
+
+function MixedColorInput({ value, onChange }: MixedColorInputProps): React.ReactElement {
+  const isMixed = value === undefined
+  const displayValue = isMixed ? '#808080' : value
+
+  const [hexText, setHexText] = React.useState(displayValue)
+
+  React.useEffect(() => {
+    setHexText(isMixed ? '' : (value ?? '#000000'))
+  }, [value, isMixed])
+
+  function handleSwatchChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    onChange(e.target.value)
+  }
+
+  function handleTextChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    setHexText(e.target.value)
+  }
+
+  function handleTextBlur(): void {
+    const cleaned = hexText.trim()
+    if (/^#?[0-9a-fA-F]{6}$/.test(cleaned)) {
+      const normalized = cleaned.startsWith('#') ? cleaned : `#${cleaned}`
+      onChange(normalized)
+      setHexText(normalized)
+    } else {
+      setHexText(isMixed ? '' : (value ?? '#000000'))
+    }
+  }
+
+  function handleTextKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur()
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <input
+          type="color"
+          value={displayValue}
+          onChange={handleSwatchChange}
+          style={{
+            width: 32,
+            height: 24,
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            padding: 0,
+            background: 'none',
+            opacity: isMixed ? 0.4 : 1,
+          }}
+        />
+        {isMixed && (
+          <span
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: '#fff',
+              fontSize: 10,
+              pointerEvents: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            —
+          </span>
+        )}
+      </div>
+      <input
+        type="text"
+        value={hexText}
+        placeholder={isMixed ? '—' : undefined}
+        onChange={handleTextChange}
+        onBlur={handleTextBlur}
+        onKeyDown={handleTextKeyDown}
+        style={{
+          flex: 1,
+          background: '#1a1a1a',
+          border: '1px solid #444',
+          borderRadius: 4,
+          color: isMixed ? '#666' : '#fff',
+          fontSize: 12,
+          padding: '3px 6px',
+          boxSizing: 'border-box',
+          outline: 'none',
+          fontFamily: 'monospace',
+        }}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Shared style constants
+// ---------------------------------------------------------------------------
+
 const sectionLabelStyle: React.CSSProperties = {
   color: '#aaa',
   fontSize: 11,
@@ -184,6 +377,10 @@ const distributeButtonStyle = (disabled: boolean): React.CSSProperties => ({
   fontSize: 12,
   opacity: disabled ? 0.45 : 1,
 })
+
+// ---------------------------------------------------------------------------
+// AlignDistributeSection
+// ---------------------------------------------------------------------------
 
 interface AlignDistributeSectionProps {
   selectedCount: number
@@ -262,6 +459,10 @@ function AlignDistributeSection({
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// CanvasSection
+// ---------------------------------------------------------------------------
 
 interface FrameRowProps {
   frame: Frame
@@ -361,6 +562,293 @@ function CanvasSection({
   )
 }
 
+// ---------------------------------------------------------------------------
+// Font families list
+// ---------------------------------------------------------------------------
+
+const FONT_FAMILIES = [
+  'sans-serif',
+  'serif',
+  'monospace',
+  'Georgia',
+  'Helvetica',
+  'Arial',
+  'Courier New',
+  'Times New Roman',
+  'Impact',
+  'Verdana',
+]
+
+// ---------------------------------------------------------------------------
+// TextSection — the main per-character formatting panel for text objects
+// ---------------------------------------------------------------------------
+
+interface TextSectionProps {
+  textObj: TextObject
+  selectedId: string
+  textEditingId: string | null
+  textSelection: { start: number; end: number } | null
+  onCommit: (id: string, patch: Partial<TextObject>) => void
+}
+
+function TextSection({
+  textObj,
+  selectedId,
+  textEditingId,
+  textSelection,
+  onCommit,
+}: TextSectionProps): React.ReactElement {
+  // Determine whether we are in span-selection mode:
+  // editing this object AND a non-collapsed range is selected.
+  const isInEditMode = textEditingId === selectedId
+  const hasRangeSelection =
+    isInEditMode &&
+    textSelection !== null &&
+    textSelection.start !== textSelection.end
+
+  // Resolve the style to display. In span-selection mode: getSelectionStyle().
+  // Otherwise: layer-level defaults.
+  const selStyle = hasRangeSelection
+    ? getSelectionStyle(textObj, textSelection!.start, textSelection!.end)
+    : null
+
+  // Helpers that return the effective value for span-selectable fields.
+  // Returns `undefined` when mixed (only possible in span-selection mode).
+  function effectiveFontFamily(): string | undefined {
+    return hasRangeSelection ? selStyle!.fontFamily : textObj.fontFamily
+  }
+
+  function effectiveFontSize(): number | undefined {
+    return hasRangeSelection ? selStyle!.fontSize : textObj.fontSize
+  }
+
+  function effectiveFontStyle(): FontStyle | undefined {
+    return hasRangeSelection ? selStyle!.fontStyle : textObj.fontStyle
+  }
+
+  function effectiveFill(): string | undefined {
+    return hasRangeSelection ? selStyle!.fill : textObj.fill
+  }
+
+  function effectiveLetterSpacing(): number | undefined {
+    return hasRangeSelection ? selStyle!.letterSpacing : textObj.letterSpacing
+  }
+
+  // Apply a style change for a span-selectable field.
+  function applySpanField(style: { fontFamily?: string; fontSize?: number; fontStyle?: FontStyle; fill?: string; letterSpacing?: number }): void {
+    if (hasRangeSelection) {
+      // Span-range mode: only update spans, do NOT touch layer defaults.
+      const newSpans = applyStyleToRange(textObj, textSelection!.start, textSelection!.end, style)
+      onCommit(selectedId, { spans: newSpans } as Partial<TextObject>)
+    } else {
+      // Whole-layer mode: update both layer default and all spans.
+      const newSpans = applyStyleToAll(textObj, style)
+      onCommit(selectedId, { ...style, spans: newSpans } as Partial<TextObject>)
+    }
+  }
+
+  // Toggle bold/italic, accounting for mixed state when hasRangeSelection.
+  function toggleFontStyleBit(bit: 'bold' | 'italic'): void {
+    const current = effectiveFontStyle()
+    // When mixed, treat as "not active" — so toggling adds the bit.
+    const hasBold = current !== undefined && current.includes('bold')
+    const hasItalic = current !== undefined && current.includes('italic')
+
+    let next: FontStyle
+    if (bit === 'bold') {
+      next = hasBold
+        ? (hasItalic ? 'italic' : 'normal')
+        : (hasItalic ? 'bold italic' : 'bold')
+    } else {
+      next = hasItalic
+        ? (hasBold ? 'bold' : 'normal')
+        : (hasBold ? 'bold italic' : 'italic')
+    }
+    applySpanField({ fontStyle: next })
+  }
+
+  const currentFontFamily = effectiveFontFamily()
+  const currentFontSize = effectiveFontSize()
+  const currentFontStyle = effectiveFontStyle()
+  const currentFill = effectiveFill()
+  const currentLetterSpacing = effectiveLetterSpacing()
+
+  // Bold/italic active state — false when mixed (undefined).
+  const boldActive = currentFontStyle !== undefined && currentFontStyle.includes('bold')
+  const italicActive = currentFontStyle !== undefined && currentFontStyle.includes('italic')
+
+  return (
+    <div style={{ padding: '12px 12px 0' }}>
+      {/* Transform fields — always layer-level */}
+      <NumberField label="X" value={textObj.x} onChange={(val) => onCommit(selectedId, { x: val } as Partial<TextObject>)} />
+      <NumberField label="Y" value={textObj.y} onChange={(val) => onCommit(selectedId, { y: val } as Partial<TextObject>)} />
+      <NumberField label="Width" value={textObj.width} min={1} onChange={(val) => onCommit(selectedId, { width: val } as Partial<TextObject>)} />
+      <NumberField label="Rotation" value={textObj.rotation} onChange={(val) => onCommit(selectedId, { rotation: val } as Partial<TextObject>)} />
+      <NumberField label="Opacity" value={textObj.opacity} step={0.01} min={0} max={1} onChange={(val) => onCommit(selectedId, { opacity: val } as Partial<TextObject>)} />
+
+      {/* Inline edit mode banner / hint */}
+      {isInEditMode ? (
+        <div
+          style={{
+            background: 'rgba(0,170,255,0.12)',
+            border: '1px solid #0af',
+            borderRadius: 4,
+            padding: '5px 8px',
+            marginTop: 10,
+            marginBottom: 4,
+            color: '#0af',
+            fontSize: 11,
+          }}
+        >
+          {hasRangeSelection
+            ? `Editing selection (chars ${textSelection!.start}–${textSelection!.end})`
+            : 'Text edit mode — select characters to style them'}
+        </div>
+      ) : (
+        <div
+          style={{
+            color: '#555',
+            fontSize: 12,
+            marginTop: 10,
+            marginBottom: 4,
+            fontStyle: 'italic',
+          }}
+        >
+          Double-click the text layer on the canvas to edit content.
+        </div>
+      )}
+
+      {/* Font family */}
+      <div style={{ ...sectionLabelStyle }}>Font</div>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+        <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Family</label>
+        <select
+          value={currentFontFamily ?? ''}
+          onChange={(e) => {
+            if (e.target.value !== '') applySpanField({ fontFamily: e.target.value })
+          }}
+          style={{
+            flex: 1,
+            background: '#1a1a1a',
+            border: '1px solid #444',
+            borderRadius: 4,
+            color: currentFontFamily === undefined ? '#666' : '#fff',
+            fontSize: 13,
+            padding: '3px 6px',
+            outline: 'none',
+          }}
+        >
+          {/* Mixed placeholder option — only shown/selected when value is undefined */}
+          {currentFontFamily === undefined && (
+            <option value="" disabled>
+              —
+            </option>
+          )}
+          {FONT_FAMILIES.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Font size */}
+      <MixedNumberField
+        label="Size"
+        value={currentFontSize}
+        min={8}
+        max={400}
+        onChange={(val) => applySpanField({ fontSize: val })}
+      />
+
+      {/* Bold / Italic toggle */}
+      <div style={{ ...sectionLabelStyle }}>Style</div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+        {(['bold', 'italic'] as const).map((bit) => {
+          const active = bit === 'bold' ? boldActive : italicActive
+          return (
+            <button
+              key={bit}
+              onClick={() => toggleFontStyleBit(bit)}
+              style={{
+                padding: '3px 10px',
+                height: 28,
+                background: active ? '#0af' : '#333',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: bit === 'bold' ? 'bold' : 'normal',
+                fontStyle: bit === 'italic' ? 'italic' : 'normal',
+              }}
+            >
+              {bit === 'bold' ? 'B' : 'I'}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Alignment — always layer-level */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+        {(['left', 'center', 'right'] as const).map((a) => (
+          <button
+            key={a}
+            onClick={() => onCommit(selectedId, { align: a } as Partial<TextObject>)}
+            style={{
+              padding: '3px 10px',
+              height: 28,
+              flex: 1,
+              background: textObj.align === a ? '#0af' : '#333',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontSize: 12,
+            }}
+          >
+            {a === 'left' ? '←' : a === 'center' ? '↔' : '→'}
+          </button>
+        ))}
+      </div>
+
+      {/* Fill color */}
+      <div style={{ ...sectionLabelStyle }}>Color</div>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+        <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Fill</label>
+        <div style={{ flex: 1 }}>
+          <MixedColorInput
+            value={currentFill}
+            onChange={(color) => applySpanField({ fill: color })}
+          />
+        </div>
+      </div>
+
+      {/* Spacing */}
+      <div style={{ ...sectionLabelStyle }}>Spacing</div>
+      <MixedNumberField
+        label="Letter Sp."
+        value={currentLetterSpacing}
+        step={0.5}
+        onChange={(val) => applySpanField({ letterSpacing: val })}
+      />
+      {/* Line height is always layer-level */}
+      <NumberField
+        label="Line H."
+        value={textObj.lineHeight}
+        step={0.1}
+        min={0.5}
+        max={4}
+        onChange={(val) => onCommit(selectedId, { lineHeight: val } as Partial<TextObject>)}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PropertiesPanel (root export)
+// ---------------------------------------------------------------------------
+
 export function PropertiesPanel(): React.ReactElement {
   const objects = useCanvasStore((s) => s.objects)
   const selectedId = useCanvasStore((s) => s.selectedId)
@@ -374,6 +862,8 @@ export function PropertiesPanel(): React.ReactElement {
   const ratio = useCanvasStore((s) => s.ratio)
   const setCanvasBackground = useCanvasStore((s) => s.setCanvasBackground)
   const setFrameBackground = useCanvasStore((s) => s.setFrameBackground)
+  const textEditingId = useCanvasStore((s) => s.textEditingId)
+  const textSelection = useCanvasStore((s) => s.textSelection)
 
   const { removeBg } = useAI()
   const operations = useAIStore((s) => s.operations)
@@ -410,8 +900,26 @@ export function PropertiesPanel(): React.ReactElement {
     if (selectedId) void removeBg(selectedId)
   }
 
+  // When a text layer is in inline edit mode, prevent non-input mouse clicks in this
+  // panel from stealing focus away from the contenteditable. Buttons, toggles, color
+  // swatches, and label clicks all go through here. Actual <input> and <select> elements
+  // are exempt so they can still receive keyboard focus when needed (e.g. font-size field).
+  function handlePanelMouseDown(e: React.MouseEvent): void {
+    if (!textEditingId) return
+    const target = e.target as HTMLElement
+    const needsKeyboardFocus =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    if (!needsKeyboardFocus) {
+      e.preventDefault()
+    }
+  }
+
   return (
     <div
+      id="properties-panel"
+      onMouseDown={handlePanelMouseDown}
       style={{
         width: 260,
         flexShrink: 0,
@@ -483,100 +991,18 @@ export function PropertiesPanel(): React.ReactElement {
           </div>
         )}
 
-        {!isMultiSelect && selectedObj !== null && isText && (() => {
-          const textObj = selectedObj as TextObject
-          return (
-            <div style={{ padding: '12px 12px 0' }}>
-              <NumberField label="X" value={textObj.x} onChange={(val) => patch({ x: val })} />
-              <NumberField label="Y" value={textObj.y} onChange={(val) => patch({ y: val })} />
-              <NumberField label="Width" value={textObj.width} min={1} onChange={(val) => patch({ width: val })} />
-              <NumberField label="Rotation" value={textObj.rotation} onChange={(val) => patch({ rotation: val })} />
-              <NumberField label="Opacity" value={textObj.opacity} step={0.01} min={0} max={1} onChange={(val) => patch({ opacity: val })} />
+        {/* Text object */}
+        {!isMultiSelect && selectedObj !== null && isText && selectedId !== null && (
+          <TextSection
+            textObj={selectedObj as TextObject}
+            selectedId={selectedId}
+            textEditingId={textEditingId}
+            textSelection={textSelection}
+            onCommit={commitUpdate}
+          />
+        )}
 
-              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
-                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Text</div>
-              <textarea
-                rows={3}
-                value={textObj.text}
-                onChange={(e) => patch({ text: e.target.value })}
-                style={{ width: '100%', background: '#1a1a1a', border: '1px solid #444', borderRadius: 4,
-                  color: '#fff', fontSize: 13, padding: '4px 6px', boxSizing: 'border-box',
-                  resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
-              />
-
-              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
-                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Font</div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-                <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Family</label>
-                <select value={textObj.fontFamily} onChange={(e) => patch({ fontFamily: e.target.value })}
-                  style={{ flex: 1, background: '#1a1a1a', border: '1px solid #444', borderRadius: 4,
-                    color: '#fff', fontSize: 13, padding: '3px 6px', outline: 'none' }}>
-                  {['sans-serif', 'serif', 'monospace', 'Georgia', 'Helvetica', 'Arial', 'Courier New', 'Times New Roman', 'Impact', 'Verdana'].map(f => (
-                    <option key={f} value={f}>{f}</option>
-                  ))}
-                </select>
-              </div>
-              <NumberField label="Size" value={textObj.fontSize} min={8} max={400} onChange={(val) => patch({ fontSize: val })} />
-
-              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
-                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Style</div>
-              <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                {(['bold', 'italic'] as const).map((style) => {
-                  const active = textObj.fontStyle.includes(style)
-                  return (
-                    <button key={style} onClick={() => {
-                      const hasBold = textObj.fontStyle.includes('bold')
-                      const hasItalic = textObj.fontStyle.includes('italic')
-                      let next: TextObject['fontStyle']
-                      if (style === 'bold') {
-                        next = hasBold
-                          ? (hasItalic ? 'italic' : 'normal')
-                          : (hasItalic ? 'bold italic' : 'bold')
-                      } else {
-                        next = hasItalic
-                          ? (hasBold ? 'bold' : 'normal')
-                          : (hasBold ? 'bold italic' : 'italic')
-                      }
-                      patch({ fontStyle: next })
-                    }}
-                    style={{ padding: '3px 10px', height: 28, background: active ? '#0af' : '#333',
-                      color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
-                      fontWeight: style === 'bold' ? 'bold' : 'normal',
-                      fontStyle: style === 'italic' ? 'italic' : 'normal' }}>
-                      {style === 'bold' ? 'B' : 'I'}
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                {(['left', 'center', 'right'] as const).map((a) => (
-                  <button key={a} onClick={() => patch({ align: a })}
-                    style={{ padding: '3px 10px', height: 28, flex: 1,
-                      background: textObj.align === a ? '#0af' : '#333',
-                      color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                    {a === 'left' ? '←' : a === 'center' ? '↔' : '→'}
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
-                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Color</div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-                <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Fill</label>
-                <input type="color" value={textObj.fill} onChange={(e) => patch({ fill: e.target.value })}
-                  style={{ width: 40, height: 28, border: 'none', borderRadius: 4, cursor: 'pointer',
-                    background: 'none', padding: 0 }} />
-              </div>
-
-              <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
-                textTransform: 'uppercase' as const, marginTop: 12, marginBottom: 6 }}>Spacing</div>
-              <NumberField label="Letter Sp." value={textObj.letterSpacing} step={0.5} onChange={(val) => patch({ letterSpacing: val })} />
-              <NumberField label="Line H." value={textObj.lineHeight} step={0.1} min={0.5} max={4} onChange={(val) => patch({ lineHeight: val })} />
-            </div>
-          )
-        })()}
-
+        {/* Shape object */}
         {!isMultiSelect && selectedObj !== null && isShape && (() => {
           const shapeObj = selectedObj as ShapeObject
           return (
@@ -600,6 +1026,7 @@ export function PropertiesPanel(): React.ReactElement {
           )
         })()}
 
+        {/* Path object */}
         {!isMultiSelect && selectedObj !== null && isPath && (() => {
           const pathObj = selectedObj as PathObject
           return (
@@ -650,6 +1077,7 @@ export function PropertiesPanel(): React.ReactElement {
           )
         })()}
 
+        {/* Image object */}
         {!isMultiSelect && selectedObj !== null && isImage && (() => {
           const imgObj = selectedObj as ImageObject
           const isContentMode = imgObj.contentEditMode === true
@@ -696,7 +1124,7 @@ export function PropertiesPanel(): React.ReactElement {
                   onChange={(val) => patch({ opacity: val })}
                 />
                 <div style={{ color: '#555', fontSize: 11, marginTop: 8, marginBottom: 8 }}>
-                  ↩ Double-click image to edit content
+                  Double-click image to edit content
                 </div>
               </div>
             )
@@ -748,21 +1176,17 @@ export function PropertiesPanel(): React.ReactElement {
               <button
                 onClick={() => {
                   if (!selectedId) return
-                  // Rotate the content offset vector by the frame's rotation angle so
-                  // the new frame origin lands exactly at the content's canvas-space
-                  // top-left, regardless of rotation. When rotation is 0 this reduces
-                  // to frameX + contentOffsetX / frameY + contentOffsetY.
-                  const θ = imgObj.rotation * (Math.PI / 180)
-                  const cosθ = Math.cos(θ)
-                  const sinθ = Math.sin(θ)
+                  const theta = imgObj.rotation * (Math.PI / 180)
+                  const cosTheta = Math.cos(theta)
+                  const sinTheta = Math.sin(theta)
                   const newFrameX =
                     imgObj.frameX +
-                    imgObj.contentOffsetX * cosθ -
-                    imgObj.contentOffsetY * sinθ
+                    imgObj.contentOffsetX * cosTheta -
+                    imgObj.contentOffsetY * sinTheta
                   const newFrameY =
                     imgObj.frameY +
-                    imgObj.contentOffsetX * sinθ +
-                    imgObj.contentOffsetY * cosθ
+                    imgObj.contentOffsetX * sinTheta +
+                    imgObj.contentOffsetY * cosTheta
                   commitUpdate(selectedId, {
                     frameX: newFrameX,
                     frameY: newFrameY,

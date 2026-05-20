@@ -188,7 +188,7 @@ export function CarouselStage(): React.ReactElement {
               id: newId,
               type: 'text',
               scope: 'global',
-              text: 'Double-click to edit',
+              spans: [{ text: 'Double-click to edit' }],
               fontFamily: 'sans-serif',
               fontSize: 48,
               fontStyle: 'normal',
@@ -207,7 +207,7 @@ export function CarouselStage(): React.ReactElement {
               visible: true,
               locked: false,
               zIndex: objectOrder.length,
-            })
+            } as TextObject as CanvasObject)
             setSelected(newId)
             setActiveTool('select')
           } else if (activeTool === 'shape') {

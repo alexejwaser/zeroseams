@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CanvasObject, ImageObject, ShapeObject, PathObject, ShapeKind } from '@/types/canvas'
+import type { CanvasObject, ImageObject, ShapeObject, PathObject, ShapeKind, TextObject } from '@/types/canvas'
 import type { Frame, FrameRatio, CarouselProject } from '@/types/project'
 
 type HistorySnapshot = Pick<
@@ -41,7 +41,13 @@ interface CanvasState {
   // Volatile UI state — NOT in HistorySnapshot
   contextMenu: { x: number; y: number; targetId: string | null } | null
   activeShapeKind: ShapeKind
+  /** Id of the TextObject currently open for inline rich-text editing */
+  textEditingId: string | null
+  /** Character-index selection range within the editing text ([start, end) half-open) */
+  textSelection: { start: number; end: number } | null
   setActiveShapeKind: (kind: ShapeKind) => void
+  setTextEditing: (id: string | null) => void
+  setTextSelection: (range: { start: number; end: number } | null) => void
   loadProject: (project: CarouselProject) => void
   // actions
   addObject: (obj: CanvasObject) => void
@@ -114,6 +120,8 @@ export const useCanvasStore = create<CanvasState>((set) => {
     future: [],
     contextMenu: null,
     activeShapeKind: 'rect',
+    textEditingId: null,
+    textSelection: null,
 
     addObject: (obj) => {
       let normalized = obj
@@ -526,22 +534,47 @@ export const useCanvasStore = create<CanvasState>((set) => {
 
     setActiveShapeKind: (kind) => set({ activeShapeKind: kind }),
 
+    setTextEditing: (id) => set({ textEditingId: id, textSelection: null }),
+
+    setTextSelection: (range) => set({ textSelection: range }),
+
     loadProject: (project) =>
-      set(() => ({
-        objects: project.objects,
-        objectOrder: project.objectOrder,
-        frameCount: project.frameCount,
-        ratio: project.ratio,
-        frameHeight: project.dimensions.height,
-        frames: project.frames,
-        backgroundColor: project.backgroundColor,
-        selectedId: null,
-        selectedIds: [],
-        contextMenu: null,
-        activeTool: 'select',
-        past: [],
-        future: [],
-      })),
+      set(() => {
+        // Migrate old TextObjects that used a flat `text` field instead of `spans`
+        const migratedObjects: Record<string, CanvasObject> = {}
+        for (const [id, obj] of Object.entries(project.objects)) {
+          if (obj.type === 'text') {
+            const t = obj as TextObject & { text?: string }
+            if (!t.spans || t.spans.length === 0) {
+              migratedObjects[id] = {
+                ...t,
+                spans: [{ text: t.text ?? '' }],
+              } as TextObject
+            } else {
+              migratedObjects[id] = obj
+            }
+          } else {
+            migratedObjects[id] = obj
+          }
+        }
+        return {
+          objects: migratedObjects,
+          objectOrder: project.objectOrder,
+          frameCount: project.frameCount,
+          ratio: project.ratio,
+          frameHeight: project.dimensions.height,
+          frames: project.frames,
+          backgroundColor: project.backgroundColor,
+          selectedId: null,
+          selectedIds: [],
+          contextMenu: null,
+          activeTool: 'select',
+          textEditingId: null,
+          textSelection: null,
+          past: [],
+          future: [],
+        }
+      }),
 
     selectAll: () =>
       set((state) => {
