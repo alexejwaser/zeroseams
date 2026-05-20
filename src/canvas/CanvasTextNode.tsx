@@ -40,10 +40,28 @@ function domOffsetToCharIndex(div: HTMLDivElement, targetNode: Node, targetOffse
   return charCount
 }
 
+/**
+ * Inverse of domOffsetToCharIndex. Finds the text node and offset within it
+ * that corresponds to a character index in the contenteditable div.
+ */
+function charIndexToDomOffset(div: HTMLDivElement, charIndex: number): { node: Node; offset: number } {
+  let remaining = charIndex
+  const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT)
+  let node: Node | null = walker.nextNode()
+  while (node !== null) {
+    const len = (node.textContent ?? '').length
+    if (remaining <= len) return { node, offset: remaining }
+    remaining -= len
+    node = walker.nextNode()
+  }
+  return { node: div, offset: div.childNodes.length }
+}
+
 export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: CanvasTextNodeProps): React.ReactElement {
   const textRef = useRef<Konva.Text>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const editDivRef = useRef<HTMLDivElement | null>(null)
+  const displayDivRef = useRef<HTMLDivElement | null>(null)
   const updateObject = useCanvasStore((s) => s.updateObject)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
@@ -112,29 +130,135 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     }
   }, [])
 
-  // When the panel applies a style while the contenteditable is open, re-sync the
-  // CSS on each DOM <span> so the user sees the change immediately, and so the
-  // finish() function can detect that text hasn't changed and use store spans directly.
+  // When the panel applies a style (which may split/merge spans), rebuild the entire
+  // DOM from obj.spans and restore the browser selection from the stored range.
   useEffect(() => {
     if (textEditingId !== obj.id) return
     const div = editDivRef.current
     if (!div) return
-    const spanEls = div.querySelectorAll<HTMLElement>('span[data-span-idx]')
-    spanEls.forEach((el) => {
-      const idxStr = el.dataset.spanIdx
-      if (idxStr === undefined) return
-      const spanIdx = Number(idxStr)
-      if (spanIdx >= obj.spans.length) return
-      const resolved = resolveSpanStyle(obj, spanIdx)
+
+    const { textSelection: storedSel } = useCanvasStore.getState()
+
+    div.innerHTML = ''
+    obj.spans.forEach((span, i) => {
+      const resolved = resolveSpanStyle(obj, i)
       const cssFont = fontStyleToCSS(resolved.fontStyle)
-      el.style.fontFamily = resolved.fontFamily
-      el.style.fontSize = `${resolved.fontSize * CANVAS_SCALE}px`
-      el.style.fontWeight = cssFont.fontWeight
-      el.style.fontStyle = cssFont.fontStyle
-      el.style.color = resolved.fill
-      el.style.letterSpacing = `${resolved.letterSpacing * CANVAS_SCALE}px`
+      const spanEl = document.createElement('span')
+      spanEl.dataset.spanIdx = String(i)
+      spanEl.textContent = span.text
+      spanEl.style.fontFamily = resolved.fontFamily
+      spanEl.style.fontSize = `${resolved.fontSize * CANVAS_SCALE}px`
+      spanEl.style.fontWeight = cssFont.fontWeight
+      spanEl.style.fontStyle = cssFont.fontStyle
+      spanEl.style.color = resolved.fill
+      spanEl.style.letterSpacing = `${resolved.letterSpacing * CANVAS_SCALE}px`
+      div.appendChild(spanEl)
     })
+
+    if (storedSel && storedSel.start !== storedSel.end) {
+      const startPos = charIndexToDomOffset(div, storedSel.start)
+      const endPos = charIndexToDomOffset(div, storedSel.end)
+      const range = document.createRange()
+      range.setStart(startPos.node, startPos.offset)
+      range.setEnd(endPos.node, endPos.offset)
+      const sel = window.getSelection()
+      if (sel) {
+        sel.removeAllRanges()
+        sel.addRange(range)
+      }
+    }
   }, [obj.spans, obj.id, textEditingId])
+
+  // Store obj.opacity as a Konva attribute so exportFrames can restore it for export
+  useEffect(() => {
+    textRef.current?.setAttr('userOpacity', obj.opacity ?? 1)
+  }, [obj.opacity])
+
+  // Create a persistent non-interactive display div to render per-span rich text.
+  // The KonvaText node is kept at opacity 0 for event handling only.
+  useEffect(() => {
+    const div = document.createElement('div')
+    div.style.position = 'fixed'
+    div.style.pointerEvents = 'none'
+    div.style.userSelect = 'none'
+    div.style.zIndex = '50'
+    div.style.whiteSpace = 'pre-wrap'
+    div.style.wordWrap = 'break-word'
+    div.style.padding = '0'
+    div.style.margin = '0'
+    div.style.overflow = 'hidden'
+    div.style.transformOrigin = '0 0'
+    document.body.appendChild(div)
+    displayDivRef.current = div
+    return () => {
+      document.body.removeChild(div)
+      displayDivRef.current = null
+    }
+  }, [])
+
+  // Sync display div position, content, and visibility on every relevant state change.
+  useEffect(() => {
+    const div = displayDivRef.current
+    if (!div) return
+
+    // Hide while contenteditable edit div is active — it takes over display
+    if (textEditingId === obj.id) {
+      div.style.display = 'none'
+      return
+    }
+
+    const node = textRef.current
+    if (!node) return
+    const stage = node.getStage()
+    if (!stage) return
+
+    const absPos = node.getAbsolutePosition()
+    const stageBox = stage.container().getBoundingClientRect()
+    const screenX = stageBox.left + absPos.x
+    const screenY = stageBox.top + absPos.y
+
+    div.style.display = 'block'
+    div.style.left = `${screenX}px`
+    div.style.top = `${screenY}px`
+    div.style.width = `${obj.width * CANVAS_SCALE}px`
+    div.style.minHeight = `${obj.height * CANVAS_SCALE}px`
+    div.style.lineHeight = String(obj.lineHeight)
+    div.style.textAlign = obj.align
+    div.style.fontFamily = obj.fontFamily
+    div.style.fontSize = `${obj.fontSize * CANVAS_SCALE}px`
+    div.style.color = obj.fill
+    div.style.opacity = String(obj.opacity ?? 1)
+    div.style.transform = obj.rotation ? `rotate(${obj.rotation}deg)` : ''
+
+    div.innerHTML = ''
+    obj.spans.forEach((span, i) => {
+      const resolved = resolveSpanStyle(obj, i)
+      const cssFont = fontStyleToCSS(resolved.fontStyle)
+      const spanEl = document.createElement('span')
+      spanEl.textContent = span.text
+      spanEl.style.fontFamily = resolved.fontFamily
+      spanEl.style.fontSize = `${resolved.fontSize * CANVAS_SCALE}px`
+      spanEl.style.fontWeight = cssFont.fontWeight
+      spanEl.style.fontStyle = cssFont.fontStyle
+      spanEl.style.color = resolved.fill
+      spanEl.style.letterSpacing = `${resolved.letterSpacing * CANVAS_SCALE}px`
+      div.appendChild(spanEl)
+    })
+
+    // Reposition on window resize (stage bounding rect changes)
+    function onResize(): void {
+      const node2 = textRef.current
+      if (!node2) return
+      const stage2 = node2.getStage()
+      if (!stage2) return
+      const absPos2 = node2.getAbsolutePosition()
+      const stageBox2 = stage2.container().getBoundingClientRect()
+      div.style.left = `${stageBox2.left + absPos2.x}px`
+      div.style.top = `${stageBox2.top + absPos2.y}px`
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [obj, textEditingId])
 
   // Inline editing on double-click — contenteditable div overlay
   function handleDblClick(): void {
@@ -387,7 +511,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         rotation={obj.rotation}
         scaleX={obj.scaleX}
         scaleY={obj.scaleY}
-        opacity={obj.opacity}
+        opacity={0}
         text={spanText(obj)}
         fontFamily={obj.fontFamily}
         fontSize={obj.fontSize}

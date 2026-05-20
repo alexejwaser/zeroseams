@@ -23,6 +23,14 @@ export async function exportFrames(
   const transformers = stage.find<Konva.Transformer>('Transformer')
   transformers.forEach((t) => t.hide())
 
+  // Restore text node opacity for export (nodes are kept at 0 during normal display
+  // because a persistent HTML overlay handles rich-text rendering instead).
+  const textNodes = stage.find<Konva.Text>('Text')
+  textNodes.forEach((n) => {
+    const userOpacity = n.getAttr('userOpacity') as number | undefined
+    n.opacity(userOpacity ?? 1)
+  })
+
   // 2. Hide frame guides (divider lines + labels)
   const guidesLayer = stage.findOne<Konva.Layer>('.guides')
   if (guidesLayer) guidesLayer.hide()
@@ -83,6 +91,7 @@ export async function exportFrames(
 
     if (guidesLayer) guidesLayer.show()
     transformers.forEach((t) => t.show())
+    textNodes.forEach((n) => n.opacity(0))
   }
 
   return blobs
