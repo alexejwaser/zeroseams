@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join } from 'path'
+import { join, dirname } from 'path'
 import { writeFile, readFile, readdir, stat, mkdir } from 'fs/promises'
 import { homedir } from 'os'
 
@@ -76,6 +76,41 @@ ipcMain.handle('open-project', async () => {
     console.error(`[main] open-project error:`, error)
     return { success: false, error: String(error) }
   }
+})
+
+ipcMain.handle(
+  'save-project-as',
+  async (_event, { json }: { json: string }) => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: join(getZeroSeamsDir(), 'untitled.zeroseams'),
+      filters: [{ name: 'Zero Seams Project', extensions: ['zeroseams'] }],
+    })
+    if (canceled || !filePath) return { success: false, error: 'cancelled' }
+    try {
+      await mkdir(dirname(filePath), { recursive: true })
+      await writeFile(filePath, json, 'utf-8')
+      return { success: true, filePath }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  },
+)
+
+ipcMain.handle(
+  'save-project',
+  async (_event, { filePath, json }: { filePath: string; json: string }) => {
+    try {
+      await writeFile(filePath, json, 'utf-8')
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  },
+)
+
+ipcMain.handle('get-system-fonts', async () => {
+  return app.getSystemFonts()
 })
 
 ipcMain.handle('list-recent-projects', async () => {

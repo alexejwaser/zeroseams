@@ -9,9 +9,11 @@ interface SaveStatusState {
   projectName: string
   projectFilename: string
   createdAt: string
+  currentFilePath: string | null
   setStatus: (status: SaveStatus) => void
   setLastSavedAt: (at: string) => void
   setProjectMeta: (id: string, name: string, filename: string, createdAt: string) => void
+  setCurrentFilePath: (path: string | null) => void
 }
 
 export const useSaveStatusStore = create<SaveStatusState>((set) => ({
@@ -21,7 +23,9 @@ export const useSaveStatusStore = create<SaveStatusState>((set) => ({
   projectName: 'Untitled Project',
   projectFilename: 'untitled',
   createdAt: new Date().toISOString(),
+  currentFilePath: null,
   setStatus: (status) => set({ status }),
   setLastSavedAt: (at) => set({ lastSavedAt: at }),
   setProjectMeta: (id, name, filename, createdAt) => set({ projectId: id, projectName: name, projectFilename: filename, createdAt }),
+  setCurrentFilePath: (path) => set({ currentFilePath: path }),
 }))

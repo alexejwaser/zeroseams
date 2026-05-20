@@ -1,6 +1,29 @@
 import { useEffect } from 'react'
 import { useCanvasStore } from './useCanvasStore'
+import { useViewportStore } from './useViewportStore'
+import { useSaveStatusStore } from '@/ui/useSaveStatusStore'
+import type { CarouselProject } from '@/types/project'
 import type { ImageObject, ShapeObject } from '@/types/canvas'
+
+function buildProjectSnapshot(
+  state: ReturnType<typeof useCanvasStore.getState>,
+  saveStore: ReturnType<typeof useSaveStatusStore.getState>,
+): CarouselProject {
+  return {
+    id: saveStore.projectId,
+    name: saveStore.projectName,
+    ratio: state.ratio,
+    dimensions: { width: 1080, height: state.frameHeight as 1080 | 1350 },
+    frameCount: state.frameCount,
+    frames: state.frames,
+    backgroundColor: state.backgroundColor,
+    objects: state.objects,
+    objectOrder: state.objectOrder,
+    createdAt: saveStore.createdAt,
+    updatedAt: new Date().toISOString(),
+    version: 1,
+  }
+}
 
 export function useKeyboardShortcuts(): void {
   const setActiveTool = useCanvasStore((s) => s.setActiveTool)
@@ -111,6 +134,61 @@ export function useKeyboardShortcuts(): void {
 
       // Meta shortcuts
       if (e.metaKey) {
+        // Zoom shortcuts
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault()
+          const { zoom, setZoom } = useViewportStore.getState()
+          setZoom(Math.min(8, zoom * 1.25))
+          return
+        }
+        if (e.key === '-') {
+          e.preventDefault()
+          const { zoom, setZoom } = useViewportStore.getState()
+          setZoom(Math.max(0.1, zoom * 0.8))
+          return
+        }
+        if (e.key === '0') {
+          e.preventDefault()
+          useViewportStore.getState().resetViewport()
+          return
+        }
+
+        if (e.key === 's' && !e.shiftKey) {
+          e.preventDefault()
+          const saveStore = useSaveStatusStore.getState()
+          const currentState = useCanvasStore.getState()
+          const project = buildProjectSnapshot(currentState, saveStore)
+          if (saveStore.currentFilePath) {
+            window.electronAPI.saveProject(saveStore.currentFilePath, JSON.stringify(project))
+              .then(() => { /* status handled by autosave */ })
+              .catch(() => {})
+          } else {
+            window.electronAPI.saveProjectAs(JSON.stringify(project))
+              .then((result: { success: boolean; filePath?: string; error?: string }) => {
+                if (result.success && result.filePath) {
+                  saveStore.setCurrentFilePath(result.filePath)
+                }
+              })
+              .catch(() => {})
+          }
+          return
+        }
+
+        if (e.key === 's' && e.shiftKey) {
+          e.preventDefault()
+          const saveStore = useSaveStatusStore.getState()
+          const currentState = useCanvasStore.getState()
+          const project = buildProjectSnapshot(currentState, saveStore)
+          window.electronAPI.saveProjectAs(JSON.stringify(project))
+            .then((result: { success: boolean; filePath?: string; error?: string }) => {
+              if (result.success && result.filePath) {
+                saveStore.setCurrentFilePath(result.filePath)
+              }
+            })
+            .catch(() => {})
+          return
+        }
+
         if (e.key === 'a') {
           e.preventDefault()
           selectAll()

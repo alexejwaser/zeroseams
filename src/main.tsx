@@ -33,8 +33,7 @@ function App(): React.ReactElement {
         <div
           style={{
             flex: 1,
-            overflowX: 'auto',
-            overflowY: 'auto',
+            overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'flex-start',

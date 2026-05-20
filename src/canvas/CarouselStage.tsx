@@ -5,6 +5,7 @@ import type { ImageObject, TextObject, ShapeObject, PathObject, AnchorPoint, Can
 import type { ShapeKind } from '@/types/canvas'
 import { FRAME_WIDTH, CANVAS_SCALE } from './constants'
 import { useCanvasStore } from './useCanvasStore'
+import { useViewportStore } from './useViewportStore'
 import { FrameGuides } from './FrameGuides'
 import { CanvasImageNode } from './CanvasImageNode'
 import { CanvasTextNode } from './CanvasTextNode'
@@ -52,6 +53,13 @@ export function CarouselStage(): React.ReactElement {
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
 
+  // Viewport store
+  const zoom = useViewportStore((s) => s.zoom)
+  const panX = useViewportStore((s) => s.panX)
+  const panY = useViewportStore((s) => s.panY)
+  const setZoom = useViewportStore((s) => s.setZoom)
+  const setPan = useViewportStore((s) => s.setPan)
+
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([])
   const [previewShape, setPreviewShape] = useState<{
     kind: ShapeKind
@@ -70,12 +78,21 @@ export function CarouselStage(): React.ReactElement {
   const penMouseDownPosRef = useRef<{ x: number; y: number } | null>(null)
   const penDragRef = useRef<{ dx: number; dy: number } | null>(null)
 
-  // Mask draw state — all positions in canvas coords (raw pos / CANVAS_SCALE)
+  // Mask draw state — all positions in canvas coords
   const maskDrawStartRef = useRef<{ x: number; y: number } | null>(null)
   const [maskPenAnchors, setMaskPenAnchors] = useState<AnchorPoint[]>([])
   const maskPenDownRef = useRef<{ x: number; y: number } | null>(null)
   const maskPenDragRef = useRef<{ dx: number; dy: number } | null>(null)
   const [maskCursorPos, setMaskCursorPos] = useState<{ x: number; y: number } | null>(null)
+
+  // Container size (for Stage width/height)
+  const [containerSize, setContainerSize] = useState({ width: 800, height: 600 })
+
+  // Pan state
+  const isPanningRef = useRef(false)
+  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
+  const [isSpacePanning, setIsSpacePanning] = useState(false)
+  const spacePanActiveRef = useRef(false)
 
   useImageDrop(containerRef)
   useAutosave()
@@ -89,6 +106,46 @@ export function CarouselStage(): React.ReactElement {
     }
   }, [])
 
+  // ResizeObserver — keep containerSize in sync with the actual DOM size
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      setContainerSize({ width, height })
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Space key — pan mode
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if (
+        e.code === 'Space' &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement) &&
+        !(e.target instanceof HTMLElement && e.target.isContentEditable)
+      ) {
+        e.preventDefault()
+        spacePanActiveRef.current = true
+        setIsSpacePanning(true)
+      }
+    }
+    function onKeyUp(e: KeyboardEvent): void {
+      if (e.code === 'Space') {
+        spacePanActiveRef.current = false
+        setIsSpacePanning(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [])
+
   // Mask draw mode: reset local state when mode is cleared
   useEffect(() => {
     if (maskDrawMode === null) {
@@ -98,11 +155,6 @@ export function CarouselStage(): React.ReactElement {
       maskPenDownRef.current = null
       maskPenDragRef.current = null
     }
-  }, [maskDrawMode])
-
-  // Mask draw mode: crosshair cursor
-  useEffect(() => {
-    if (containerRef.current) containerRef.current.style.cursor = maskDrawMode ? 'crosshair' : ''
   }, [maskDrawMode])
 
   // Pen tool: Escape commits the open path (not closed)
@@ -177,33 +229,87 @@ export function CarouselStage(): React.ReactElement {
     clearMaskDrawMode()
   }
 
-  const canvasWidth = frameCount * FRAME_WIDTH * CANVAS_SCALE
-  const canvasHeight = frameHeight * CANVAS_SCALE
+  // --- Wheel: non-passive native listener to prevent browser scroll during zoom ---
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    function onWheel(e: WheelEvent): void {
+      e.preventDefault()
+      const rect = el!.getBoundingClientRect()
+      const { zoom, panX, panY } = useViewportStore.getState()
+      const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08
+      const newZoom = Math.max(0.1, Math.min(8, zoom * factor))
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      const canvasX = (mouseX - panX) / (CANVAS_SCALE * zoom)
+      const canvasY = (mouseY - panY) / (CANVAS_SCALE * zoom)
+      const newPanX = mouseX - canvasX * CANVAS_SCALE * newZoom
+      const newPanY = mouseY - canvasY * CANVAS_SCALE * newZoom
+      useViewportStore.getState().setZoom(newZoom)
+      useViewportStore.getState().setPan(newPanX, newPanY)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, []) // empty deps — containerRef.current is stable
+
+  // --- Pan handlers: middle mouse or space+left ---
+  function handleContainerMouseDown(e: React.MouseEvent<HTMLDivElement>): void {
+    if (e.button === 1 || (e.button === 0 && spacePanActiveRef.current)) {
+      e.preventDefault()
+      isPanningRef.current = true
+      panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY }
+    }
+  }
+
+  function handleContainerMouseMove(e: React.MouseEvent<HTMLDivElement>): void {
+    if (!isPanningRef.current) return
+    const dx = e.clientX - panStartRef.current.x
+    const dy = e.clientY - panStartRef.current.y
+    setPan(panStartRef.current.panX + dx, panStartRef.current.panY + dy)
+  }
+
+  function handleContainerMouseUp(): void {
+    isPanningRef.current = false
+  }
 
   return (
     <div
       ref={containerRef}
       style={{
-        width: canvasWidth,
-        height: canvasHeight,
-        background: '#1a1a1a',
-        cursor: activeTool === 'text' ? 'text'
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        position: 'relative',
+        cursor: isSpacePanning ? 'grab'
+          : maskDrawMode ? 'crosshair'
+          : activeTool === 'text' ? 'text'
           : (activeTool === 'shape' || activeTool === 'pen') ? 'crosshair'
           : 'default',
       }}
+      onMouseDown={handleContainerMouseDown}
+      onMouseMove={handleContainerMouseMove}
+      onMouseUp={handleContainerMouseUp}
+      onMouseLeave={handleContainerMouseUp}
     >
       <Stage
         ref={stageRef}
-        width={canvasWidth}
-        height={canvasHeight}
-        scaleX={CANVAS_SCALE}
-        scaleY={CANVAS_SCALE}
+        width={containerSize.width}
+        height={containerSize.height}
+        x={panX}
+        y={panY}
+        scaleX={CANVAS_SCALE * zoom}
+        scaleY={CANVAS_SCALE * zoom}
         onMouseDown={(e) => {
+          // Block Stage events when panning
+          if (isPanningRef.current) return
+
           // --- Mask draw mode ---
           if (maskDrawMode !== null) {
-            const pos = e.target.getStage()?.getPointerPosition()
+            const stage = e.target.getStage()
+            if (!stage) return
+            const pos = stage.getRelativePointerPosition()
             if (!pos) return
-            const cx = pos.x / CANVAS_SCALE; const cy = pos.y / CANVAS_SCALE
+            const cx = pos.x; const cy = pos.y
             if (maskDrawMode.tool === 'rect' || maskDrawMode.tool === 'ellipse') {
               maskDrawStartRef.current = { x: cx, y: cy }
             } else {
@@ -217,9 +323,9 @@ export function CarouselStage(): React.ReactElement {
             if (e.target !== e.target.getStage()) return
             const stage = e.target.getStage()
             if (!stage) return
-            const pos = stage.getPointerPosition()
+            const pos = stage.getRelativePointerPosition()
             if (!pos) return
-            penMouseDownPosRef.current = { x: pos.x / CANVAS_SCALE, y: pos.y / CANVAS_SCALE }
+            penMouseDownPosRef.current = { x: pos.x, y: pos.y }
             penDragRef.current = null
             return
           }
@@ -229,11 +335,10 @@ export function CarouselStage(): React.ReactElement {
           if (activeTool === 'text') {
             const stage = e.target.getStage()
             if (!stage) return
-            const pos = stage.getPointerPosition()
+            const pos = stage.getRelativePointerPosition()
             if (!pos) return
-            // pos is in screen pixels, stage is scaled by CANVAS_SCALE, so divide
-            const canvasX = pos.x / CANVAS_SCALE
-            const canvasY = pos.y / CANVAS_SCALE
+            const canvasX = pos.x
+            const canvasY = pos.y
             const newId = crypto.randomUUID()
             addObject({
               id: newId,
@@ -265,10 +370,10 @@ export function CarouselStage(): React.ReactElement {
             if (e.target !== e.target.getStage()) return
             const stage = e.target.getStage()
             if (!stage) return
-            const pos = stage.getPointerPosition()
+            const pos = stage.getRelativePointerPosition()
             if (!pos) return
-            const canvasX = pos.x / CANVAS_SCALE
-            const canvasY = pos.y / CANVAS_SCALE
+            const canvasX = pos.x
+            const canvasY = pos.y
             const newId = crypto.randomUUID()
             drawStartRef.current = { x: canvasX, y: canvasY, id: newId }
             setPreviewShape({ kind: activeShapeKind, x: canvasX, y: canvasY, width: 1, height: 1 })
@@ -282,11 +387,16 @@ export function CarouselStage(): React.ReactElement {
           }
         }}
         onMouseMove={(e) => {
+          // Block Stage events when panning
+          if (isPanningRef.current) return
+
           // --- Mask draw mode cursor tracking ---
           if (maskDrawMode !== null) {
-            const pos = e.target.getStage()?.getPointerPosition()
+            const stage = e.target.getStage()
+            if (!stage) return
+            const pos = stage.getRelativePointerPosition()
             if (!pos) return
-            const cx = pos.x / CANVAS_SCALE; const cy = pos.y / CANVAS_SCALE
+            const cx = pos.x; const cy = pos.y
             setMaskCursorPos({ x: cx, y: cy })
             if (maskDrawMode.tool === 'pen' && maskPenDownRef.current) {
               maskPenDragRef.current = { dx: cx - maskPenDownRef.current.x, dy: cy - maskPenDownRef.current.y }
@@ -298,9 +408,9 @@ export function CarouselStage(): React.ReactElement {
           if (activeTool === 'pen') {
             const stage = e.target.getStage()
             if (!stage) return
-            const pos = stage.getPointerPosition()
+            const pos = stage.getRelativePointerPosition()
             if (!pos) return
-            const cx = pos.x / CANVAS_SCALE; const cy = pos.y / CANVAS_SCALE
+            const cx = pos.x; const cy = pos.y
             setPenCursorPos({ x: cx, y: cy })
             if (penMouseDownPosRef.current) {
               penDragRef.current = {
@@ -314,10 +424,10 @@ export function CarouselStage(): React.ReactElement {
           if (!drawStartRef.current || previewShape === null) return
           const stage = e.target.getStage()
           if (!stage) return
-          const pos = stage.getPointerPosition()
+          const pos = stage.getRelativePointerPosition()
           if (!pos) return
-          const curX = pos.x / CANVAS_SCALE
-          const curY = pos.y / CANVAS_SCALE
+          const curX = pos.x
+          const curY = pos.y
 
           // Lines and arrows track both endpoints, not a normalised bounding box
           if (activeShapeKind === 'line' || activeShapeKind === 'arrow') {
@@ -341,11 +451,16 @@ export function CarouselStage(): React.ReactElement {
           }
         }}
         onMouseUp={() => {
+          // Block Stage events when panning
+          if (isPanningRef.current) return
+
           // --- Mask draw mode: place shape or anchor ---
           if (maskDrawMode !== null) {
-            const pos = stageRef.current?.getPointerPosition()
+            const stage = stageRef.current
+            if (!stage) return
+            const pos = stage.getRelativePointerPosition()
             if (!pos) return
-            const cx = pos.x / CANVAS_SCALE; const cy = pos.y / CANVAS_SCALE
+            const cx = pos.x; const cy = pos.y
             const { id, tool } = maskDrawMode
 
             if (tool === 'rect' || tool === 'ellipse') {
@@ -396,13 +511,15 @@ export function CarouselStage(): React.ReactElement {
 
           // --- Pen tool: place anchor ---
           if (activeTool === 'pen') {
-            const pos = stageRef.current?.getPointerPosition()
+            const stage = stageRef.current
+            if (!stage) return
+            const pos = stage.getRelativePointerPosition()
             const downPos = penMouseDownPosRef.current
             penMouseDownPosRef.current = null
             if (!pos || !downPos) return
 
-            const cx = pos.x / CANVAS_SCALE
-            const cy = pos.y / CANVAS_SCALE
+            const cx = pos.x
+            const cy = pos.y
 
             const drag = penDragRef.current
             penDragRef.current = null
@@ -731,6 +848,23 @@ export function CarouselStage(): React.ReactElement {
           />
         </Layer>
       </Stage>
+
+      {/* Zoom indicator badge */}
+      <div style={{
+        position: 'absolute',
+        bottom: 12,
+        left: 12,
+        background: 'rgba(0,0,0,0.5)',
+        color: '#aaa',
+        fontSize: 11,
+        padding: '2px 8px',
+        borderRadius: 4,
+        pointerEvents: 'none',
+        userSelect: 'none',
+        zIndex: 10,
+      }}>
+        {Math.round(CANVAS_SCALE * zoom * 100)}%
+      </div>
     </div>
   )
 }

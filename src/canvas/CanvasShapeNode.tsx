@@ -29,7 +29,8 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
   const addToSelection = useCanvasStore((s) => s.addToSelection)
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
-  const { computeSnap } = useSnapGuides()
+  const { computeSnap, computeSnapResize } = useSnapGuides()
+  const pendingGuidesRef = useRef<SnapGuide[]>([])
 
   const altHeldRef = useRef(false)
   const dragStartXRef = useRef(0)
@@ -261,6 +262,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
   }
 
   function handleTransform(e: Konva.KonvaEventObject<Event>): void {
+    onGuidesChange(pendingGuidesRef.current)
     const node = e.target as Konva.Shape
     const { x, y } = getTopLeftFromNode(node)
     const { width, height } = getDimsFromNode(node)
@@ -269,6 +271,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
   }
 
   function handleTransformEnd(e: Konva.KonvaEventObject<Event>): void {
+    onGuidesChange([])
     const node = e.target as Konva.Shape
     const { x, y } = getTopLeftFromNode(node)
     const { width, height } = getDimsFromNode(node)
@@ -448,7 +451,19 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
         keepRatio={false}
         boundBoxFunc={(oldBox, newBox) => {
           if (newBox.width < 5 || newBox.height < 5) return oldBox
-          return newBox
+          const rotation = newBox.rotation ?? 0
+          const anchor = transformerRef.current?.getActiveAnchor() ?? ''
+          if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+            pendingGuidesRef.current = []
+            return newBox
+          }
+          const { box: snapped, guides } = computeSnapResize(
+            { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+            anchor,
+            obj.id,
+          )
+          pendingGuidesRef.current = guides
+          return { ...snapped, rotation: newBox.rotation }
         }}
       />
     </>

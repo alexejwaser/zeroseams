@@ -4,6 +4,7 @@ import type Konva from 'konva'
 import type { TextObject, TextSpan, CanvasObject } from '@/types/canvas'
 import { CANVAS_SCALE } from './constants'
 import { useCanvasStore } from './useCanvasStore'
+import { useViewportStore } from './useViewportStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { spanText, resolveSpanStyle, fontStyleToCSS } from './textSpans'
@@ -72,7 +73,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   const setTextSelection = useCanvasStore((s) => s.setTextSelection)
   const setCaptureTextSelection = useCanvasStore((s) => s.setCaptureTextSelection)
   const textEditingId = useCanvasStore((s) => s.textEditingId)
-  const { computeSnap } = useSnapGuides()
+  const zoom = useViewportStore((s) => s.zoom)
+  const panX = useViewportStore((s) => s.panX)
+  const panY = useViewportStore((s) => s.panY)
+  const { computeSnap, computeSnapResize } = useSnapGuides()
+  const pendingGuidesRef = useRef<SnapGuide[]>([])
 
   // Alt (option) key tracking for duplicate-on-drag
   const altHeldRef = useRef(false)
@@ -146,12 +151,13 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       const spanEl = document.createElement('span')
       spanEl.dataset.spanIdx = String(i)
       spanEl.textContent = span.text
+      const editScale = CANVAS_SCALE * zoom
       spanEl.style.fontFamily = resolved.fontFamily
-      spanEl.style.fontSize = `${resolved.fontSize * CANVAS_SCALE}px`
+      spanEl.style.fontSize = `${resolved.fontSize * editScale}px`
       spanEl.style.fontWeight = cssFont.fontWeight
       spanEl.style.fontStyle = cssFont.fontStyle
       spanEl.style.color = resolved.fill
-      spanEl.style.letterSpacing = `${resolved.letterSpacing * CANVAS_SCALE}px`
+      spanEl.style.letterSpacing = `${resolved.letterSpacing * editScale}px`
       div.appendChild(spanEl)
     })
 
@@ -197,6 +203,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   }, [])
 
   // Sync display div position, content, and visibility on every relevant state change.
+  // Also re-runs when viewport zoom/pan changes so the overlay tracks the canvas transform.
   useEffect(() => {
     const div = displayDivRef.current
     if (!div) return
@@ -212,20 +219,20 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     const stage = node.getStage()
     if (!stage) return
 
-    const absPos = node.getAbsolutePosition()
     const stageBox = stage.container().getBoundingClientRect()
-    const screenX = stageBox.left + absPos.x
-    const screenY = stageBox.top + absPos.y
+    const scale = CANVAS_SCALE * zoom
+    const screenX = stageBox.left + panX + obj.x * scale
+    const screenY = stageBox.top + panY + obj.y * scale
 
     div.style.display = 'block'
     div.style.left = `${screenX}px`
     div.style.top = `${screenY}px`
-    div.style.width = `${obj.width * CANVAS_SCALE}px`
-    div.style.minHeight = `${obj.height * CANVAS_SCALE}px`
+    div.style.width = `${obj.width * scale}px`
+    div.style.minHeight = `${obj.height * scale}px`
     div.style.lineHeight = String(obj.lineHeight)
     div.style.textAlign = obj.align
     div.style.fontFamily = obj.fontFamily
-    div.style.fontSize = `${obj.fontSize * CANVAS_SCALE}px`
+    div.style.fontSize = `${obj.fontSize * scale}px`
     div.style.color = obj.fill
     div.style.opacity = String(obj.opacity ?? 1)
     div.style.transform = obj.rotation ? `rotate(${obj.rotation}deg)` : ''
@@ -237,28 +244,29 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       const spanEl = document.createElement('span')
       spanEl.textContent = span.text
       spanEl.style.fontFamily = resolved.fontFamily
-      spanEl.style.fontSize = `${resolved.fontSize * CANVAS_SCALE}px`
+      spanEl.style.fontSize = `${resolved.fontSize * scale}px`
       spanEl.style.fontWeight = cssFont.fontWeight
       spanEl.style.fontStyle = cssFont.fontStyle
       spanEl.style.color = resolved.fill
-      spanEl.style.letterSpacing = `${resolved.letterSpacing * CANVAS_SCALE}px`
+      spanEl.style.letterSpacing = `${resolved.letterSpacing * scale}px`
       div.appendChild(spanEl)
     })
 
     // Reposition on window resize (stage bounding rect changes)
     function onResize(): void {
-      const node2 = textRef.current
-      if (!node2) return
-      const stage2 = node2.getStage()
+      const stage2 = textRef.current?.getStage()
       if (!stage2) return
-      const absPos2 = node2.getAbsolutePosition()
       const stageBox2 = stage2.container().getBoundingClientRect()
-      div.style.left = `${stageBox2.left + absPos2.x}px`
-      div.style.top = `${stageBox2.top + absPos2.y}px`
+      const { zoom: z, panX: px, panY: py } = useViewportStore.getState()
+      const sc = CANVAS_SCALE * z
+      div.style.left = `${stageBox2.left + px + obj.x * sc}px`
+      div.style.top = `${stageBox2.top + py + obj.y * sc}px`
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [obj, textEditingId])
+  // panX/panY are included so pan changes trigger a reposition even when obj hasn't changed
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obj, textEditingId, zoom, panX, panY])
 
   // Inline editing on double-click — contenteditable div overlay
   function handleDblClick(): void {
@@ -271,13 +279,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     // Capture as non-null const so finish() closure can reference it safely
     const textNode = node
 
-    // Get absolute position of the text node on screen
-    const absPos = textNode.getAbsolutePosition()
+    // Get position using explicit formula — avoids getAbsolutePosition() inaccuracies
     const stageBox = stage.container().getBoundingClientRect()
-
-    // getAbsolutePosition() already applies stage scale, so no further scaling needed
-    const screenX = stageBox.left + absPos.x
-    const screenY = stageBox.top + absPos.y
+    const scale = CANVAS_SCALE * zoom
+    const screenX = stageBox.left + panX + obj.x * scale
+    const screenY = stageBox.top + panY + obj.y * scale
 
     // Hide the Konva text node
     textNode.visible(false)
@@ -286,6 +292,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     // Snapshot original spans for Escape-cancel
     const originalSpans: TextSpan[] = obj.spans.map((s) => ({ ...s }))
 
+    const editScale = CANVAS_SCALE * zoom
+
     // Build contenteditable div
     const div = document.createElement('div')
     div.contentEditable = 'true'
@@ -293,8 +301,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     div.style.position = 'fixed'
     div.style.left = `${screenX}px`
     div.style.top = `${screenY}px`
-    div.style.width = `${obj.width * CANVAS_SCALE}px`
-    div.style.minHeight = `${obj.height * CANVAS_SCALE}px`
+    div.style.width = `${obj.width * editScale}px`
+    div.style.minHeight = `${obj.height * editScale}px`
     div.style.whiteSpace = 'pre-wrap'
     div.style.wordWrap = 'break-word'
     div.style.lineHeight = String(obj.lineHeight)
@@ -308,7 +316,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     div.style.zIndex = '9999'
     // Base font from layer defaults (visual reference)
     div.style.fontFamily = obj.fontFamily
-    div.style.fontSize = `${obj.fontSize * CANVAS_SCALE}px`
+    div.style.fontSize = `${obj.fontSize * editScale}px`
     div.style.color = obj.fill
 
     // Populate one <span> per TextSpan
@@ -319,11 +327,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       spanEl.dataset.spanIdx = String(i)
       spanEl.textContent = span.text
       spanEl.style.fontFamily = resolved.fontFamily
-      spanEl.style.fontSize = `${resolved.fontSize * CANVAS_SCALE}px`
+      spanEl.style.fontSize = `${resolved.fontSize * editScale}px`
       spanEl.style.fontWeight = cssFont.fontWeight
       spanEl.style.fontStyle = cssFont.fontStyle
       spanEl.style.color = resolved.fill
-      spanEl.style.letterSpacing = `${resolved.letterSpacing * CANVAS_SCALE}px`
+      spanEl.style.letterSpacing = `${resolved.letterSpacing * editScale}px`
       div.appendChild(spanEl)
     })
 
@@ -567,6 +575,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
           }
         }}
         onTransform={(e) => {
+          onGuidesChange(pendingGuidesRef.current)
           const node = e.target as Konva.Text
           const absWidth = node.width() * node.scaleX()
           const absHeight = node.height() * node.scaleY()
@@ -585,6 +594,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
           })
         }}
         onTransformEnd={(e) => {
+          onGuidesChange([])
           const node = e.target as Konva.Text
           const absWidth = node.width() * node.scaleX()
           const absHeight = node.height() * node.scaleY()
@@ -629,7 +639,19 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         ]}
         boundBoxFunc={(oldBox, newBox) => {
           if (newBox.width < 20 || newBox.height < 10) return oldBox
-          return newBox
+          const rotation = newBox.rotation ?? 0
+          const anchor = transformerRef.current?.getActiveAnchor() ?? ''
+          if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+            pendingGuidesRef.current = []
+            return newBox
+          }
+          const { box: snapped, guides } = computeSnapResize(
+            { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+            anchor,
+            obj.id,
+          )
+          pendingGuidesRef.current = guides
+          return { ...snapped, rotation: newBox.rotation }
         }}
       />
     </>

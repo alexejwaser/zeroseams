@@ -76,6 +76,8 @@ export function Toolbar(): React.ReactElement {
   const setActiveShapeKind = useCanvasStore((s) => s.setActiveShapeKind)
   const setProjectMeta = useSaveStatusStore((s) => s.setProjectMeta)
   const projectName = useSaveStatusStore((s) => s.projectName)
+  const currentFilePath = useSaveStatusStore((s) => s.currentFilePath)
+  const setCurrentFilePath = useSaveStatusStore((s) => s.setCurrentFilePath)
 
   const [exportOpen, setExportOpen] = useState(false)
   const [exportMode, setExportMode] = useState<'all' | 'single' | 'range'>('all')
@@ -161,6 +163,7 @@ export function Toolbar(): React.ReactElement {
       loadProject(project)
       const filename = project.name.toLowerCase().replace(/\s+/g, '-')
       setProjectMeta(project.id, project.name, filename, project.createdAt)
+      setCurrentFilePath(null)
     } catch (err) {
       console.error('[open]', err)
     } finally {
@@ -653,16 +656,65 @@ export function Toolbar(): React.ReactElement {
           )}
         </div>
 
-        {/* Save status pill */}
+        {/* Save As button */}
+        <button
+          onClick={() => {
+            const state = useCanvasStore.getState()
+            const saveStore = useSaveStatusStore.getState()
+            const project: CarouselProject = {
+              id: saveStore.projectId,
+              name: saveStore.projectName,
+              ratio: state.ratio,
+              dimensions: { width: 1080, height: state.frameHeight as 1080 | 1350 },
+              frameCount: state.frameCount,
+              frames: state.frames,
+              backgroundColor: state.backgroundColor,
+              objects: state.objects,
+              objectOrder: state.objectOrder,
+              createdAt: saveStore.createdAt,
+              updatedAt: new Date().toISOString(),
+              version: 1,
+            }
+            window.electronAPI.saveProjectAs(JSON.stringify(project))
+              .then((result: { success: boolean; filePath?: string; error?: string }) => {
+                if (result.success && result.filePath) {
+                  saveStore.setCurrentFilePath(result.filePath)
+                }
+              })
+              .catch((err: unknown) => {
+                console.error('[ZeroSeams] Save As failed:', err)
+              })
+          }}
+          style={{
+            background: '#2a2a2a',
+            border: '1px solid #444',
+            borderRadius: 4,
+            color: '#ccc',
+            fontSize: 11,
+            padding: '3px 8px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Save As…
+        </button>
+
+        {/* Save status pill + current file name */}
         <div
           style={{
             minWidth: 80,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'flex-end',
+            gap: 6,
           }}
         >
           <SaveStatusPill status={saveStatus} />
+          {currentFilePath && (
+            <span style={{ color: '#666', fontSize: 11, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentFilePath.split('/').pop()}
+            </span>
+          )}
         </div>
       </div>
     </div>

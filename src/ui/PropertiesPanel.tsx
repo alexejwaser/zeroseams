@@ -11,6 +11,7 @@ import {
   applyStyleToRange,
   applyStyleToAll,
 } from '@/canvas/textSpans'
+import { FontPicker } from './FontPicker'
 
 // ---------------------------------------------------------------------------
 // NumberField — normal (always has a value)
@@ -564,23 +565,6 @@ function CanvasSection({
 }
 
 // ---------------------------------------------------------------------------
-// Font families list
-// ---------------------------------------------------------------------------
-
-const FONT_FAMILIES = [
-  'sans-serif',
-  'serif',
-  'monospace',
-  'Georgia',
-  'Helvetica',
-  'Arial',
-  'Courier New',
-  'Times New Roman',
-  'Impact',
-  'Verdana',
-]
-
-// ---------------------------------------------------------------------------
 // TextSection — the main per-character formatting panel for text objects
 // ---------------------------------------------------------------------------
 
@@ -723,34 +707,10 @@ function TextSection({
       <div style={{ ...sectionLabelStyle }}>Font</div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
         <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Family</label>
-        <select
-          value={currentFontFamily ?? ''}
-          onChange={(e) => {
-            if (e.target.value !== '') applySpanField({ fontFamily: e.target.value })
-          }}
-          style={{
-            flex: 1,
-            background: '#1a1a1a',
-            border: '1px solid #444',
-            borderRadius: 4,
-            color: currentFontFamily === undefined ? '#666' : '#fff',
-            fontSize: 13,
-            padding: '3px 6px',
-            outline: 'none',
-          }}
-        >
-          {/* Mixed placeholder option — only shown/selected when value is undefined */}
-          {currentFontFamily === undefined && (
-            <option value="" disabled>
-              —
-            </option>
-          )}
-          {FONT_FAMILIES.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
+        <FontPicker
+          value={currentFontFamily}
+          onChange={(family) => applySpanField({ fontFamily: family })}
+        />
       </div>
 
       {/* Font size */}
