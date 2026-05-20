@@ -864,6 +864,7 @@ export function PropertiesPanel(): React.ReactElement {
   const setFrameBackground = useCanvasStore((s) => s.setFrameBackground)
   const textEditingId = useCanvasStore((s) => s.textEditingId)
   const textSelection = useCanvasStore((s) => s.textSelection)
+  const captureTextSelection = useCanvasStore((s) => s.captureTextSelection)
 
   const { removeBg } = useAI()
   const operations = useAIStore((s) => s.operations)
@@ -906,6 +907,9 @@ export function PropertiesPanel(): React.ReactElement {
   // are exempt so they can still receive keyboard focus when needed (e.g. font-size field).
   function handlePanelMouseDown(e: React.MouseEvent): void {
     if (!textEditingId) return
+    // Snapshot the live browser selection NOW — before focus can move away
+    // from the contenteditable (either via preventDefault below or by focusing an input).
+    captureTextSelection?.()
     const target = e.target as HTMLElement
     const needsKeyboardFocus =
       target instanceof HTMLInputElement ||

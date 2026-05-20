@@ -45,9 +45,13 @@ interface CanvasState {
   textEditingId: string | null
   /** Character-index selection range within the editing text ([start, end) half-open) */
   textSelection: { start: number; end: number } | null
+  /** Callback set by the active CanvasTextNode; PropertiesPanel calls it on mousedown
+   *  to snapshot the live browser selection before focus can move away. */
+  captureTextSelection: (() => void) | null
   setActiveShapeKind: (kind: ShapeKind) => void
   setTextEditing: (id: string | null) => void
   setTextSelection: (range: { start: number; end: number } | null) => void
+  setCaptureTextSelection: (fn: (() => void) | null) => void
   loadProject: (project: CarouselProject) => void
   // actions
   addObject: (obj: CanvasObject) => void
@@ -122,6 +126,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     activeShapeKind: 'rect',
     textEditingId: null,
     textSelection: null,
+    captureTextSelection: null,
 
     addObject: (obj) => {
       let normalized = obj
@@ -537,6 +542,8 @@ export const useCanvasStore = create<CanvasState>((set) => {
     setTextEditing: (id) => set({ textEditingId: id, textSelection: null }),
 
     setTextSelection: (range) => set({ textSelection: range }),
+
+    setCaptureTextSelection: (fn) => set({ captureTextSelection: fn }),
 
     loadProject: (project) =>
       set(() => {

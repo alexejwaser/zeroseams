@@ -45,6 +45,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const setTextEditing = useCanvasStore((s) => s.setTextEditing)
   const setTextSelection = useCanvasStore((s) => s.setTextSelection)
+  const setCaptureTextSelection = useCanvasStore((s) => s.setCaptureTextSelection)
   const textEditingId = useCanvasStore((s) => s.textEditingId)
   const { computeSnap } = useSnapGuides()
 
@@ -210,9 +211,15 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
 
     setTextEditing(obj.id)
 
-    // Read the current DOM selection and store it if it's a real range (non-collapsed)
-    // inside the div. Called from explicit user-gesture events (mouseup, keyup with Shift).
-    function captureSelection(): void {
+    // Sync initial "select all" directly — selectionchange may not fire synchronously
+    // for programmatic selections.
+    const fullText = obj.spans.map((s) => s.text).join('')
+    setTextSelection({ start: 0, end: fullText.length })
+
+    // Reads the current browser selection into Zustand. Used as the selectionchange
+    // handler and also registered in the store so PropertiesPanel can call it on
+    // mousedown — before focus moves away from the contenteditable.
+    function captureNow(): void {
       const selection = window.getSelection()
       if (!selection || selection.rangeCount === 0) return
       const r = selection.getRangeAt(0)
@@ -221,28 +228,28 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       const e = domOffsetToCharIndex(div, r.endContainer, r.endOffset)
       const start = Math.min(s, e)
       const end = Math.max(s, e)
-      if (start === end) return  // collapsed — don't overwrite last real selection
-      setTextSelection({ start, end })
+      if (start === end) {
+        setTextSelection(null)        // collapsed inside div = plain click / cursor move
+      } else {
+        setTextSelection({ start, end })
+      }
     }
 
-    // Clear the stored selection whenever the user starts a fresh interaction inside the
-    // div (click to reposition cursor, type a character). The selection will be re-set
-    // by captureSelection() if the gesture turns into a drag-select.
-    div.addEventListener('mousedown', () => setTextSelection(null))
-    div.addEventListener('input', () => setTextSelection(null))
-    // Keyboard-driven selection (Shift+Arrow, Cmd+A)
-    div.addEventListener('keyup', (e) => {
-      if (e.shiftKey || (e.metaKey && e.key === 'a')) captureSelection()
-      // Non-shift nav key = user moved cursor without selecting → clear
-      else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
-        setTextSelection(null)
-      }
-    })
-    // Mouse-drag selection completes on mouseup
-    div.addEventListener('mouseup', captureSelection)
+    // selectionchange handles ALL cases:
+    //   non-collapsed in div  → store range
+    //   collapsed in div      → clear range (plain click, typing, arrow keys)
+    //   outside div           → do nothing (preserves value when focus moves to panel input)
+    function handleSelectionChange(): void {
+      const selection = window.getSelection()
+      if (!selection || selection.rangeCount === 0) return
+      const r = selection.getRangeAt(0)
+      if (!div.contains(r.commonAncestorContainer)) return
+      captureNow()
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
 
-    // Sync the initial "select all" range immediately after entry
-    captureSelection()
+    // Expose captureNow so PropertiesPanel can snapshot the selection at mousedown time.
+    setCaptureTextSelection(captureNow)
 
     let cancelled = false
     let finished = false
@@ -252,6 +259,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       finished = true
       document.removeEventListener('mousedown', handleDocMouseDown)
       document.removeEventListener('keydown', handleDocKeyDown)
+      document.removeEventListener('selectionchange', handleSelectionChange)
+      setCaptureTextSelection(null)
       editDivRef.current = null
 
       if (cancelled) {
