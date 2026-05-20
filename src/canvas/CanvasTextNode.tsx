@@ -20,13 +20,20 @@ interface CanvasTextNodeProps {
  * Walks the div's child text nodes accumulating character counts.
  */
 function domOffsetToCharIndex(div: HTMLDivElement, targetNode: Node, targetOffset: number): number {
+  // Element-node case: targetOffset is a child index (e.g. from selectNodeContents).
+  // Sum the textContent lengths of children [0, targetOffset).
+  if (targetNode.nodeType !== Node.TEXT_NODE) {
+    let count = 0
+    const children = Array.from(targetNode.childNodes).slice(0, targetOffset)
+    for (const child of children) count += (child.textContent ?? '').length
+    return count
+  }
+  // Text-node case: walk the div's text nodes and accumulate character counts.
   let charCount = 0
   const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT)
   let node = walker.nextNode()
   while (node !== null) {
-    if (node === targetNode) {
-      return charCount + targetOffset
-    }
+    if (node === targetNode) return charCount + targetOffset
     charCount += (node.textContent ?? '').length
     node = walker.nextNode()
   }
