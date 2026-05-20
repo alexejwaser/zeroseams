@@ -44,10 +44,6 @@ npm run dev
 - **Zustand** — state management
 - **@imgly/background-removal** — on-device AI background removal
 
-## Contributing
-
-This is an early-stage side project. Issues and PRs are welcome — just open a discussion first if you're planning something large.
-
 ## License
 
 MIT
