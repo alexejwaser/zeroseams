@@ -7,6 +7,7 @@ export function useKeyboardShortcuts(): void {
   const setSelected = useCanvasStore((s) => s.setSelected)
   const clearContentEditMode = useCanvasStore((s) => s.clearContentEditMode)
   const clearPathEditMode = useCanvasStore((s) => s.clearPathEditMode)
+  const clearMaskDrawMode = useCanvasStore((s) => s.clearMaskDrawMode)
   const selectAll = useCanvasStore((s) => s.selectAll)
   const duplicateObject = useCanvasStore((s) => s.duplicateObject)
   const bringForward = useCanvasStore((s) => s.bringForward)
@@ -55,6 +56,11 @@ export function useKeyboardShortcuts(): void {
       if (e.key === 'Escape') {
         // If context menu is open, let it handle its own Escape — don't clear selection
         if (useCanvasStore.getState().contextMenu !== null) return
+        // If mask draw is active, cancel draw without deselecting the image
+        if (useCanvasStore.getState().maskDrawMode !== null) {
+          clearMaskDrawMode()
+          return
+        }
         setSelected(null)
         clearContentEditMode()
         clearPathEditMode()
@@ -174,6 +180,7 @@ export function useKeyboardShortcuts(): void {
     setSelected,
     clearContentEditMode,
     clearPathEditMode,
+    clearMaskDrawMode,
     selectAll,
     duplicateObject,
     bringForward,

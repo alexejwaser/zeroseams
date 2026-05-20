@@ -64,6 +64,23 @@ export interface ImageObject extends BaseCanvasObject {
   // --- Edit mode ---
   /** When true, transformer targets the image content rather than the frame */
   contentEditMode: boolean
+  /** When true, mask anchor overlay is shown and editable */
+  maskEditMode: boolean
+
+  // --- Vector mask ---
+  mask?: MaskData
+}
+
+/** Closed bezier path that clips the visible area of an image. Anchors are in content space. */
+export interface MaskData {
+  /** Closed bezier path — anchors in content space (0,0 = image bitmap top-left) */
+  anchors: AnchorPoint[]
+  /** Soft edge blur in canvas pixels; 0 = hard edge */
+  feather: number
+  /** false = hide outside path, true = hide inside path */
+  inverted: boolean
+  /** Toggle mask on/off without deleting it */
+  visible: boolean
 }
 
 export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold italic'

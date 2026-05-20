@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CanvasObject, ImageObject, ShapeObject, PathObject, ShapeKind, TextObject } from '@/types/canvas'
+import type { CanvasObject, ImageObject, ShapeObject, PathObject, ShapeKind, TextObject, MaskData } from '@/types/canvas'
 import type { Frame, FrameRatio, CarouselProject } from '@/types/project'
 
 type HistorySnapshot = Pick<
@@ -74,6 +74,11 @@ interface CanvasState {
   redo: () => void
   clearContentEditMode: () => void
   clearPathEditMode: () => void
+  clearMaskEditMode: () => void
+  enterMaskEditMode: (id: string) => void
+  maskDrawMode: { id: string; tool: 'pen' | 'rect' | 'ellipse' } | null
+  enterMaskDrawMode: (id: string, tool: 'pen' | 'rect' | 'ellipse') => void
+  clearMaskDrawMode: () => void
   moveObject: (id: string, dx: number, dy: number) => void
   setContextMenu: (state: { x: number; y: number; targetId: string | null } | null) => void
   selectAll: () => void
@@ -89,12 +94,36 @@ interface CanvasState {
   ) => void
 }
 
+function normalizeObjectsForSnapshot(objects: Record<string, CanvasObject>): Record<string, CanvasObject> {
+  let changed = false
+  const result: Record<string, CanvasObject> = {}
+  for (const [id, obj] of Object.entries(objects)) {
+    if (obj.type === 'image') {
+      const img = obj as ImageObject
+      if (img.contentEditMode || img.maskEditMode) {
+        result[id] = { ...img, contentEditMode: false, maskEditMode: false }
+        changed = true
+        continue
+      }
+    } else if (obj.type === 'path') {
+      const p = obj as PathObject
+      if (p.pathEditMode) {
+        result[id] = { ...p, pathEditMode: false }
+        changed = true
+        continue
+      }
+    }
+    result[id] = obj
+  }
+  return changed ? result : objects
+}
+
 export const useCanvasStore = create<CanvasState>((set) => {
   function pushHistoryFrom(
     state: Pick<CanvasState, 'objects' | 'objectOrder' | 'ratio' | 'frameHeight' | 'frames' | 'backgroundColor' | 'frameCount' | 'past'>
   ): HistorySnapshot[] {
     const snapshot: HistorySnapshot = {
-      objects: state.objects,
+      objects: normalizeObjectsForSnapshot(state.objects),
       objectOrder: state.objectOrder,
       ratio: state.ratio,
       frameHeight: state.frameHeight,
@@ -127,6 +156,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     textEditingId: null,
     textSelection: null,
     captureTextSelection: null,
+    maskDrawMode: null,
 
     addObject: (obj) => {
       let normalized = obj
@@ -488,8 +518,8 @@ export const useCanvasStore = create<CanvasState>((set) => {
             updated[id] = obj
           }
         }
-        if (!changed) return state
-        return { objects: updated }
+        if (!changed) return { maskDrawMode: null }
+        return { objects: updated, maskDrawMode: null }
       }),
 
     clearPathEditMode: () =>
@@ -504,9 +534,59 @@ export const useCanvasStore = create<CanvasState>((set) => {
             updated[id] = obj
           }
         }
-        if (!changed) return state
-        return { objects: updated }
+        if (!changed) return { maskDrawMode: null }
+        return { objects: updated, maskDrawMode: null }
       }),
+
+    clearMaskEditMode: () =>
+      set((state) => {
+        const updated: Record<string, CanvasObject> = {}
+        let changed = false
+        for (const [id, obj] of Object.entries(state.objects)) {
+          if (obj.type === 'image' && (obj as ImageObject).maskEditMode) {
+            updated[id] = { ...obj, maskEditMode: false } as CanvasObject
+            changed = true
+          } else {
+            updated[id] = obj
+          }
+        }
+        if (!changed) return { maskDrawMode: null }
+        return { objects: updated, maskDrawMode: null }
+      }),
+
+    enterMaskEditMode: (id) =>
+      set((state) => {
+        const updated: Record<string, CanvasObject> = {}
+        for (const [oid, obj] of Object.entries(state.objects)) {
+          if (obj.type === 'image') {
+            updated[oid] = {
+              ...obj,
+              contentEditMode: false,
+              maskEditMode: oid === id,
+            } as CanvasObject
+          } else {
+            updated[oid] = obj
+          }
+        }
+        return { objects: updated, maskDrawMode: null }
+      }),
+
+    enterMaskDrawMode: (id, tool) =>
+      set((state) => {
+        const updated: Record<string, CanvasObject> = {}
+        for (const [oid, obj] of Object.entries(state.objects)) {
+          if (obj.type === 'image') {
+            updated[oid] = { ...obj, contentEditMode: false, maskEditMode: false } as CanvasObject
+          } else if (obj.type === 'path') {
+            updated[oid] = { ...(obj as PathObject), pathEditMode: false } as CanvasObject
+          } else {
+            updated[oid] = obj
+          }
+        }
+        return { objects: updated, maskDrawMode: { id, tool } }
+      }),
+
+    clearMaskDrawMode: () => set({ maskDrawMode: null }),
 
     moveObject: (id, dx, dy) =>
       set((state) => {
@@ -560,6 +640,12 @@ export const useCanvasStore = create<CanvasState>((set) => {
             } else {
               migratedObjects[id] = obj
             }
+          } else if (obj.type === 'image') {
+            const img = obj as ImageObject & { maskEditMode?: boolean }
+            migratedObjects[id] = {
+              ...img,
+              maskEditMode: img.maskEditMode ?? false,
+            } as ImageObject
           } else {
             migratedObjects[id] = obj
           }
@@ -668,6 +754,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
             id: newId,
             name: undefined,
             contentEditMode: false,
+            maskEditMode: false,
             frameX: img.frameX + offsetX,
             frameY: img.frameY + offsetY,
             x: img.x + offsetX,
@@ -716,6 +803,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
             id: newId,
             name: undefined,
             contentEditMode: false,
+            maskEditMode: false,
             frameX: op.frameX,
             frameY: op.frameY,
             x: op.frameX,

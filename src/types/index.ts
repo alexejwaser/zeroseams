@@ -3,6 +3,7 @@ export type {
   CanvasObjectScope,
   BaseCanvasObject,
   ImageObject,
+  MaskData,
   FontStyle,
   TextSpanStyle,
   TextSpan,

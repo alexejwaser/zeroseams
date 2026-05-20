@@ -1,9 +1,10 @@
 import React from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
+import { useThumbnailStore } from '@/canvas/useThumbnailStore'
 import { useAI } from '@/ai'
 import { useAIStore } from '@/ai'
 import type { BackgroundRemovalOperation } from '@/types/ai'
-import type { ImageObject, TextObject, ShapeObject, PathObject, FontStyle } from '@/types/canvas'
+import type { ImageObject, TextObject, ShapeObject, PathObject, FontStyle, MaskData } from '@/types/canvas'
 import type { Frame } from '@/types/project'
 import {
   getSelectionStyle,
@@ -855,7 +856,13 @@ export function PropertiesPanel(): React.ReactElement {
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const updateObject = useCanvasStore((s) => s.updateObject)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+  const enterMaskEditMode = useCanvasStore((s) => s.enterMaskEditMode)
+  const maskDrawMode = useCanvasStore((s) => s.maskDrawMode)
+  const enterMaskDrawMode = useCanvasStore((s) => s.enterMaskDrawMode)
+  const clearMaskDrawMode = useCanvasStore((s) => s.clearMaskDrawMode)
   const alignObjects = useCanvasStore((s) => s.alignObjects)
+
+  const thumbnails = useThumbnailStore((s) => s.thumbnails)
   const distributeObjects = useCanvasStore((s) => s.distributeObjects)
   const backgroundColor = useCanvasStore((s) => s.backgroundColor)
   const frames = useCanvasStore((s) => s.frames)
@@ -1129,6 +1136,200 @@ export function PropertiesPanel(): React.ReactElement {
                 />
                 <div style={{ color: '#555', fontSize: 11, marginTop: 8, marginBottom: 8 }}>
                   Double-click image to edit content
+                </div>
+
+                {/* Mask section */}
+                <div style={{ borderTop: '1px solid #333', paddingTop: 10, marginTop: 4, marginBottom: 10 }}>
+                  <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
+                    textTransform: 'uppercase' as const, marginBottom: 8 }}>Mask</div>
+
+                  {imgObj.maskEditMode ? (
+                    /* Mask edit mode active banner */
+                    <div style={{
+                      background: '#1e3a2f',
+                      border: '1px solid #2d6a4f',
+                      borderRadius: 4,
+                      padding: '6px 10px',
+                      marginBottom: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <span style={{ color: '#52b788', fontSize: 11 }}>Editing mask path</span>
+                      <button
+                        onClick={() => {
+                          if (selectedId) commitUpdate(selectedId, { maskEditMode: false })
+                        }}
+                        style={{
+                          background: '#2d6a4f',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 3,
+                          padding: '2px 8px',
+                          cursor: 'pointer',
+                          fontSize: 11,
+                        }}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  ) : imgObj.mask == null ? (
+                    /* No mask — draw mode picker or active draw banner */
+                    maskDrawMode?.id === selectedId ? (
+                      /* Draw in progress for this image */
+                      <div>
+                        <div style={{ color: '#0af', fontSize: 11, marginBottom: 8 }}>
+                          Drawing {maskDrawMode.tool} mask —{' '}
+                          {maskDrawMode.tool === 'pen'
+                            ? 'click to add points, close path to finish'
+                            : 'drag to define shape'}
+                        </div>
+                        <button
+                          onClick={() => clearMaskDrawMode()}
+                          style={{
+                            width: '100%',
+                            height: 28,
+                            background: '#3a2020',
+                            color: '#f88',
+                            border: '1px solid #6a2020',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontSize: 12,
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      /* Tool picker */
+                      <div>
+                        <div style={{ color: '#777', fontSize: 11, marginBottom: 6 }}>Add mask:</div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {(['pen', 'rect', 'ellipse'] as const).map((tool) => (
+                            <button
+                              key={tool}
+                              onClick={() => { if (selectedId) enterMaskDrawMode(selectedId, tool) }}
+                              style={{
+                                flex: 1,
+                                height: 28,
+                                background: '#333',
+                                color: '#ccc',
+                                border: '1px solid #444',
+                                borderRadius: 4,
+                                cursor: 'pointer',
+                                fontSize: 12,
+                              }}
+                            >
+                              {tool === 'pen' ? 'Pen' : tool === 'rect' ? 'Rect' : 'Oval'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  ) : (
+                    /* Mask controls */
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        {thumbnails[`${selectedId}__mask`] != null && (
+                          <div style={{
+                            width: 36, height: 36, flexShrink: 0, borderRadius: 3,
+                            overflow: 'hidden', border: '1px solid #3a3a3a', background: '#000',
+                          }}>
+                            <img
+                              src={thumbnails[`${selectedId}__mask`]}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                              alt="mask"
+                              draggable={false}
+                            />
+                          </div>
+                        )}
+                        <button
+                          onClick={() => { if (selectedId) enterMaskEditMode(selectedId) }}
+                          style={{
+                            flex: 1,
+                            height: 28,
+                            background: '#333',
+                            color: '#ccc',
+                            border: '1px solid #555',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontSize: 11,
+                          }}
+                        >
+                          Edit Mask
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (selectedId) commitUpdate(selectedId, { mask: { ...imgObj.mask!, visible: !imgObj.mask!.visible } })
+                          }}
+                          title={imgObj.mask.visible ? 'Hide mask' : 'Show mask'}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '0 4px',
+                            fontSize: 14,
+                            opacity: imgObj.mask.visible ? 0.9 : 0.3,
+                          }}
+                        >
+                          👁
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (selectedId) commitUpdate(selectedId, { mask: undefined })
+                          }}
+                          title="Delete mask"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '0 4px',
+                            fontSize: 12,
+                            color: '#f44',
+                            opacity: 0.7,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      {/* Feather */}
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                        <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Feather</label>
+                        <input
+                          type="range"
+                          min={0}
+                          max={50}
+                          step={1}
+                          value={imgObj.mask.feather}
+                          onChange={(e) => {
+                            if (!selectedId) return
+                            updateObject(selectedId, { mask: { ...imgObj.mask!, feather: Number(e.target.value) } })
+                          }}
+                          onMouseUp={(e) => {
+                            if (!selectedId) return
+                            commitUpdate(selectedId, { mask: { ...imgObj.mask!, feather: Number((e.target as HTMLInputElement).value) } })
+                          }}
+                          style={{ flex: 1 }}
+                        />
+                        <span style={{ color: '#ccc', fontSize: 12, width: 24, textAlign: 'right' }}>
+                          {imgObj.mask.feather}
+                        </span>
+                      </div>
+
+                      {/* Invert */}
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                        <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Invert</label>
+                        <input
+                          type="checkbox"
+                          checked={imgObj.mask.inverted}
+                          onChange={() => {
+                            if (selectedId) commitUpdate(selectedId, { mask: { ...imgObj.mask!, inverted: !imgObj.mask!.inverted } })
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )

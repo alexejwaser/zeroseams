@@ -1,11 +1,12 @@
 import React, { useRef, useEffect, useMemo } from 'react'
-import { Group, Image as KonvaImage, Rect, Transformer } from 'react-konva'
+import { Group, Image as KonvaImage, Rect, Transformer, Shape, Circle, Line } from 'react-konva'
 import useImage from 'use-image'
 import type Konva from 'konva'
 import type { ImageObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
+import { anchorsToPathData } from './CanvasPathNode'
 
 interface CanvasImageNodeProps {
   obj: ImageObject
@@ -30,6 +31,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
 
   const frameRectRef = useRef<Konva.Rect>(null)
   const groupRef = useRef<Konva.Group>(null)
+  const innerGroupRef = useRef<Konva.Group>(null)
   const imageRef = useRef<Konva.Image>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   // Tracks CMD key only — SHIFT is handled natively by Konva Transformer:
@@ -46,7 +48,10 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
   const pendingDuplicateRef = useRef(false)
 
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+  const updateObject = useCanvasStore((s) => s.updateObject)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
+  const maskDrawMode = useCanvasStore((s) => s.maskDrawMode)
+  const isDrawTarget = maskDrawMode?.id === obj.id
   const addToSelection = useCanvasStore((s) => s.addToSelection)
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
@@ -62,6 +67,64 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
     [obj.frameWidth, obj.frameHeight],
   )
 
+  // Build the mask shape's sceneFunc whenever mask data or content dimensions change.
+  // The function draws the mask into the inner group's cached canvas using destination-in
+  // composite — white pixels = keep image, transparent = erase image.
+  const maskSceneFunc = useMemo((): ((ctx: Konva.Context) => void) | undefined => {
+    if (!obj.mask || !obj.mask.visible || obj.mask.anchors.length < 3) return undefined
+    const { anchors, feather, inverted } = obj.mask
+    const ox = obj.contentOffsetX
+    const oy = obj.contentOffsetY
+    const cw = obj.contentWidth
+    const ch = obj.contentHeight
+    // Translate anchors from content space to inner-group local space
+    const shiftedAnchors = anchors.map((a) => ({ ...a, x: a.x + ox, y: a.y + oy }))
+    const pathData = anchorsToPathData(shiftedAnchors, true)
+
+    return (ctx: Konva.Context): void => {
+      const native = ctx._context as CanvasRenderingContext2D
+      if (!pathData) return
+      if (inverted) {
+        // Fill content rect white (destination-in keeps image pixels there)
+        native.fillStyle = 'white'
+        native.fillRect(ox, oy, cw, ch)
+        // Cut hole for the mask path using destination-out + optional blur
+        const prevGco = native.globalCompositeOperation
+        native.globalCompositeOperation = 'destination-out'
+        if (feather > 0) native.filter = `blur(${feather}px)`
+        native.fillStyle = 'white'
+        native.fill(new Path2D(pathData))
+        if (feather > 0) native.filter = 'none'
+        native.globalCompositeOperation = prevGco
+      } else {
+        if (feather > 0) native.filter = `blur(${feather}px)`
+        native.fillStyle = 'white'
+        native.fill(new Path2D(pathData))
+        if (feather > 0) native.filter = 'none'
+      }
+    }
+  }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight])
+
+  // Manage the inner group's cache for mask compositing.
+  useEffect(() => {
+    const inner = innerGroupRef.current
+    if (!inner) return
+    if (obj.mask && obj.mask.visible && obj.mask.anchors.length >= 3) {
+      const feather = obj.mask.feather
+      const buf = Math.max(feather, 0) + 2
+      inner.cache({
+        x: obj.contentOffsetX - buf,
+        y: obj.contentOffsetY - buf,
+        width: obj.contentWidth + buf * 2,
+        height: obj.contentHeight + buf * 2,
+      })
+      inner.getLayer()?.batchDraw()
+    } else {
+      inner.clearCache()
+      inner.getLayer()?.batchDraw()
+    }
+  }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight, obj.src])
+
   // Re-run when image loads so transformer can attach on first select.
   useEffect(() => {
     const tr = transformerRef.current
@@ -69,7 +132,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
     const img = imageRef.current
     if (!tr || !frameRect || !img) return
 
-    if (isSelected) {
+    if (isSelected && !obj.maskEditMode && !isDrawTarget) {
       if (obj.contentEditMode) {
         tr.nodes([img])
         tr.borderStroke('#ff7043')
@@ -89,13 +152,9 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
       tr.getLayer()?.batchDraw()
     } else {
       tr.nodes([])
-      // Use synchronous draw() when detaching so the old transformer box is
-      // cleared immediately — before the newly selected transformer paints.
-      // batchDraw() is deferred (rAF) and can leave the ghost box visible if
-      // the two deferred repaints coalesce or resolve in the wrong order.
       tr.getLayer()?.draw()
     }
-  }, [isSelected, obj.contentEditMode, obj.locked, loadedImage])
+  }, [isSelected, obj.contentEditMode, obj.maskEditMode, obj.locked, loadedImage, isDrawTarget, maskDrawMode])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -124,15 +183,15 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
   }, [])
 
   // Syncs clip group during transform (resize/rotate). During resize, the frame
-  // origin may shift (top/left handle drag), so compensate the image position to
-  // keep it fixed in canvas space. During pure rotation, no compensation is needed
-  // because the content offset is relative to the group which already co-rotates.
+  // origin may shift (top/left handle drag), so compensate to keep the content
+  // fixed in canvas space. During pure rotation, no compensation is needed.
   // NOTE: does not call onGuidesChange — guides are emitted by the onTransform
   // handler after this runs, from pendingGuidesRef set by boundBoxFunc.
   function syncGroupOnTransform(): void {
     const rect = frameRectRef.current
     const group = groupRef.current
     const img = imageRef.current
+    const inner = innerGroupRef.current
     if (!rect || !group) return
 
     const newWidth = rect.width() * rect.scaleX()
@@ -147,6 +206,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
     if (img) {
       if (cmdHeldRef.current && !isPureRotation) {
         // CMD+SHIFT: scale content proportionally alongside the frame (live preview).
+        if (inner) { inner.x(0); inner.y(0) }
         const scaleX = newWidth / obj.frameWidth
         const scaleY = newHeight / obj.frameHeight
         const scale = (scaleX + scaleY) / 2
@@ -157,14 +217,22 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
       } else if (isPureRotation) {
         // Pure rotation: content offset is relative to the group and co-rotates
         // with it — no adjustment needed.
+        if (inner) { inner.x(0); inner.y(0) }
         img.x(obj.contentOffsetX)
         img.y(obj.contentOffsetY)
       } else {
-        // Resize: compensate for frame-origin movement so the image stays at the
-        // same canvas position. Without this, top/left handle drags shift the
-        // group origin and drag the image content along with it.
-        img.x(obj.contentOffsetX + (obj.frameX - rect.x()))
-        img.y(obj.contentOffsetY + (obj.frameY - rect.y()))
+        // Normal resize: keep image at its stored offset and shift the inner group
+        // instead. When a mask is present the inner group is cached — moving img.x
+        // alone would leave the cached bitmap (image + mask) stationary while only
+        // the uncached image node moves, causing the mask to drift. Shifting the
+        // entire inner group moves the cached bitmap as a unit so both stay fixed
+        // in canvas space: group.x + inner.x + img.x = rect.x + (frameX-rect.x) + offsetX = frameX+offsetX ✓
+        img.x(obj.contentOffsetX)
+        img.y(obj.contentOffsetY)
+        if (inner) {
+          inner.x(obj.frameX - rect.x())
+          inner.y(obj.frameY - rect.y())
+        }
       }
     }
 
@@ -241,6 +309,13 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
       group.clip({ x: 0, y: 0, width: newFrameWidth, height: newFrameHeight })
     }
 
+    // Reset inner group position (was shifted imperatively during live preview to keep
+    // image and mask cache in sync). Pre-apply the compensated image position so Konva
+    // draws correctly before the React re-render propagates the new contentOffset prop.
+    const inner = innerGroupRef.current
+    const img = imageRef.current
+    if (inner) { inner.x(0); inner.y(0) }
+
     onGuidesChange([])
 
     // Read CMD from both the ref and the native event (belt-and-suspenders:
@@ -285,6 +360,10 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         contentOffsetY: obj.contentOffsetY,
       })
     } else {
+      const newContentOffsetX = obj.contentOffsetX + (obj.frameX - newFrameX)
+      const newContentOffsetY = obj.contentOffsetY + (obj.frameY - newFrameY)
+      // Pre-apply so Konva renders correctly before the React re-render
+      if (img) { img.x(newContentOffsetX); img.y(newContentOffsetY) }
       commitUpdate(obj.id, {
         frameX: newFrameX,
         frameY: newFrameY,
@@ -295,11 +374,10 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         y: newFrameY,
         width: newFrameWidth,
         height: newFrameHeight,
-        // Persist the canvas-position compensation applied during live preview.
         // When the frame origin shifts (top/left handle), contentOffset adjusts
         // so the image stays at the same canvas position after commit.
-        contentOffsetX: obj.contentOffsetX + (obj.frameX - newFrameX),
-        contentOffsetY: obj.contentOffsetY + (obj.frameY - newFrameY),
+        contentOffsetX: newContentOffsetX,
+        contentOffsetY: newContentOffsetY,
       })
     }
   }
@@ -342,23 +420,121 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         y={obj.frameY}
         clip={groupClip}
         rotation={obj.rotation}
-        opacity={obj.opacity}
-        listening={obj.contentEditMode}
+        opacity={(obj.maskEditMode || isDrawTarget) ? obj.opacity * 0.5 : obj.opacity}
+        listening={obj.contentEditMode && !isDrawTarget}
       >
-        <KonvaImage
-          ref={imageRef}
-          image={image}
-          x={obj.contentOffsetX}
-          y={obj.contentOffsetY}
-          width={obj.contentWidth}
-          height={obj.contentHeight}
-          draggable={obj.contentEditMode && !obj.locked}
-          onClick={() => { if (obj.contentEditMode) onSelect() }}
-          onTap={() => { if (obj.contentEditMode) onSelect() }}
-          onDragEnd={handleContentDragEnd}
-          onTransformEnd={handleContentTransformEnd}
-        />
+        {/* Inner group: cached when a mask is active to enable destination-in compositing */}
+        <Group ref={innerGroupRef}>
+          <KonvaImage
+            ref={imageRef}
+            image={image}
+            x={obj.contentOffsetX}
+            y={obj.contentOffsetY}
+            width={obj.contentWidth}
+            height={obj.contentHeight}
+            draggable={obj.contentEditMode && !obj.locked}
+            onClick={() => { if (obj.contentEditMode) onSelect() }}
+            onTap={() => { if (obj.contentEditMode) onSelect() }}
+            onDragEnd={handleContentDragEnd}
+            onTransformEnd={handleContentTransformEnd}
+          />
+          {maskSceneFunc !== undefined && (
+            <Shape
+              sceneFunc={maskSceneFunc}
+              globalCompositeOperation="destination-in"
+              listening={false}
+            />
+          )}
+        </Group>
       </Group>
+
+      {/* Mask anchor overlay — shadow group with same position/rotation but no clip */}
+      {obj.maskEditMode && obj.mask && (
+        <Group x={obj.frameX} y={obj.frameY} rotation={obj.rotation} listening={true}>
+          {obj.mask.anchors.map((anchor, i) => {
+            const ax = obj.contentOffsetX + anchor.x
+            const ay = obj.contentOffsetY + anchor.y
+            const hix = ax + anchor.handleIn.dx
+            const hiy = ay + anchor.handleIn.dy
+            const hox = ax + anchor.handleOut.dx
+            const hoy = ay + anchor.handleOut.dy
+            const hasHandleIn = anchor.handleIn.dx !== 0 || anchor.handleIn.dy !== 0
+            const hasHandleOut = anchor.handleOut.dx !== 0 || anchor.handleOut.dy !== 0
+            const mask = obj.mask!
+            return (
+              <React.Fragment key={i}>
+                {hasHandleIn && (
+                  <>
+                    <Line points={[ax, ay, hix, hiy]} stroke="#0096ff" strokeWidth={1} listening={false} />
+                    <Circle
+                      x={hix} y={hiy} radius={4}
+                      fill="#fff" stroke="#0096ff" strokeWidth={1}
+                      draggable
+                      onDragMove={(e) => {
+                        const n = e.target as Konva.Circle
+                        const newAnchors = mask.anchors.map((a, j) =>
+                          j === i ? { ...a, handleIn: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                        )
+                        updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                      }}
+                      onDragEnd={(e) => {
+                        const n = e.target as Konva.Circle
+                        const newAnchors = mask.anchors.map((a, j) =>
+                          j === i ? { ...a, handleIn: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                        )
+                        commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                      }}
+                    />
+                  </>
+                )}
+                {hasHandleOut && (
+                  <>
+                    <Line points={[ax, ay, hox, hoy]} stroke="#0096ff" strokeWidth={1} listening={false} />
+                    <Circle
+                      x={hox} y={hoy} radius={4}
+                      fill="#fff" stroke="#0096ff" strokeWidth={1}
+                      draggable
+                      onDragMove={(e) => {
+                        const n = e.target as Konva.Circle
+                        const newAnchors = mask.anchors.map((a, j) =>
+                          j === i ? { ...a, handleOut: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                        )
+                        updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                      }}
+                      onDragEnd={(e) => {
+                        const n = e.target as Konva.Circle
+                        const newAnchors = mask.anchors.map((a, j) =>
+                          j === i ? { ...a, handleOut: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                        )
+                        commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                      }}
+                    />
+                  </>
+                )}
+                <Circle
+                  x={ax} y={ay} radius={5}
+                  fill="#0096ff" stroke="#fff" strokeWidth={1.5}
+                  draggable
+                  onDragMove={(e) => {
+                    const n = e.target as Konva.Circle
+                    const newAnchors = mask.anchors.map((a, j) =>
+                      j === i ? { ...a, x: n.x() - obj.contentOffsetX, y: n.y() - obj.contentOffsetY } : a
+                    )
+                    updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                  }}
+                  onDragEnd={(e) => {
+                    const n = e.target as Konva.Circle
+                    const newAnchors = mask.anchors.map((a, j) =>
+                      j === i ? { ...a, x: n.x() - obj.contentOffsetX, y: n.y() - obj.contentOffsetY } : a
+                    )
+                    commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                  }}
+                />
+              </React.Fragment>
+            )
+          })}
+        </Group>
+      )}
 
       {/* Invisible frame rect — sole interaction/transform target in frame mode.
           keepRatio=false lets the user resize freely; holding Shift toggles
@@ -376,10 +552,10 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         strokeEnabled={obj.contentEditMode || isInMultiSelect}
         strokeScaleEnabled={false}
         perfectDrawEnabled={false}
-        draggable={!obj.locked && !obj.contentEditMode}
-        listening={!obj.contentEditMode}
+        draggable={!obj.locked && !obj.contentEditMode && !obj.maskEditMode && !isDrawTarget}
+        listening={!obj.contentEditMode && !obj.maskEditMode && !isDrawTarget}
         onClick={(e) => {
-          if (!obj.contentEditMode) {
+          if (!obj.contentEditMode && !obj.maskEditMode && !isDrawTarget) {
             if (e.evt.shiftKey) {
               addToSelection(obj.id)
             } else {
@@ -387,7 +563,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
             }
           }
         }}
-        onTap={() => { if (!obj.contentEditMode) onSelect() }}
+        onTap={() => { if (!obj.contentEditMode && !obj.maskEditMode) onSelect() }}
         onDblClick={handleDblClick}
         onDblTap={handleDblClick}
         onDragStart={() => {
@@ -399,9 +575,6 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         onDragEnd={handleFrameDragEnd}
         onTransform={() => {
           syncGroupOnTransform()
-          // Emit guides computed by boundBoxFunc — done here (after the imperative
-          // node updates) so the resulting state update cannot interfere with the
-          // clip/image values we just set above.
           onGuidesChange(pendingGuidesRef.current)
         }}
         onTransformEnd={handleFrameTransformEnd}
@@ -422,8 +595,6 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
           const rotation = newBox.rotation ?? 0
           const anchor = transformerRef.current?.getActiveAnchor() ?? ''
 
-          // Skip snap for rotated frames (axis-aligned targets don't map cleanly)
-          // and for the rotation handle itself.
           if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
             pendingGuidesRef.current = []
             return newBox

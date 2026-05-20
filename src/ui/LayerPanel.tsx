@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useThumbnailStore } from '@/canvas/useThumbnailStore'
-import type { CanvasObject, CanvasObjectType } from '@/types/canvas'
+import type { CanvasObject, CanvasObjectType, ImageObject } from '@/types/canvas'
 
 function typeLabel(type: CanvasObjectType): string {
   switch (type) {
@@ -23,6 +23,7 @@ export function LayerPanel(): React.ReactElement {
   const updateObject = useCanvasStore((s) => s.updateObject)
   const reorderObjects = useCanvasStore((s) => s.reorderObjects)
   const toggleLock = useCanvasStore((s) => s.toggleLock)
+  const enterMaskEditMode = useCanvasStore((s) => s.enterMaskEditMode)
 
   const thumbnails = useThumbnailStore((s) => s.thumbnails)
 
@@ -158,29 +159,54 @@ export function LayerPanel(): React.ReactElement {
                 boxSizing: 'border-box',
               }}
             >
-              {/* Thumbnail */}
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  flexShrink: 0,
-                  borderRadius: 3,
-                  overflow: 'hidden',
-                  background: '#111',
-                  border: '1px solid #3a3a3a',
-                }}
-              >
-                {thumbnails[id] != null ? (
-                  <img
-                    src={thumbnails[id]}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    alt=""
-                    draggable={false}
-                  />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', background: '#222' }} />
-                )}
-              </div>
+              {/* Thumbnail(s) — dual if image has a mask */}
+              {obj.type === 'image' && (obj as ImageObject).mask != null ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                  {/* Image thumbnail */}
+                  <div
+                    onClick={(e) => { e.stopPropagation(); setSelected(id) }}
+                    style={{
+                      width: 30, height: 30, borderRadius: 3, overflow: 'hidden',
+                      background: '#111', border: '1px solid #3a3a3a', cursor: 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    {thumbnails[id] != null ? (
+                      <img src={thumbnails[id]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" draggable={false} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: '#222' }} />
+                    )}
+                  </div>
+                  <span style={{ color: '#555', fontSize: 10, flexShrink: 0 }}>⛓</span>
+                  {/* Mask thumbnail */}
+                  <div
+                    onClick={(e) => { e.stopPropagation(); enterMaskEditMode(id) }}
+                    title="Click to edit mask"
+                    style={{
+                      width: 30, height: 30, borderRadius: 3, overflow: 'hidden',
+                      background: '#000', border: '1px solid #3a3a3a', cursor: 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    {thumbnails[`${id}__mask`] != null ? (
+                      <img src={thumbnails[`${id}__mask`]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="mask" draggable={false} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: '#111' }} />
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    width: 44, height: 44, flexShrink: 0, borderRadius: 3,
+                    overflow: 'hidden', background: '#111', border: '1px solid #3a3a3a',
+                  }}
+                >
+                  {thumbnails[id] != null ? (
+                    <img src={thumbnails[id]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" draggable={false} />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', background: '#222' }} />
+                  )}
+                </div>
+              )}
 
               {/* Name */}
               <span
