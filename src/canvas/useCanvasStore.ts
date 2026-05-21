@@ -1,10 +1,33 @@
 import { create } from 'zustand'
 import type { CanvasObject, ImageObject, ShapeObject, PathObject, ShapeKind, TextObject, MaskData } from '@/types/canvas'
-import type { Frame, FrameRatio, CarouselProject } from '@/types/project'
+import type { Frame, FrameRatio, Platform, CarouselProject } from '@/types/project'
+
+export const PLATFORM_PRESETS: Record<Platform, Array<{ ratio: FrameRatio; label: string; width: number; height: number }>> = {
+  instagram: [
+    { ratio: 'square',   label: '1:1',  width: 1080, height: 1080 },
+    { ratio: 'portrait', label: '4:5',  width: 1080, height: 1350 },
+  ],
+  tiktok: [
+    { ratio: 'story',    label: '9:16', width: 1080, height: 1920 },
+    { ratio: 'square',   label: '1:1',  width: 1080, height: 1080 },
+  ],
+  facebook: [
+    { ratio: 'square',    label: '1:1',  width: 1080, height: 1080 },
+    { ratio: 'portrait',  label: '4:5',  width: 1080, height: 1350 },
+    { ratio: 'landscape', label: '16:9', width: 1080, height: 608  },
+  ],
+  threads: [
+    { ratio: 'square',   label: '1:1',  width: 1080, height: 1080 },
+    { ratio: 'portrait', label: '4:5',  width: 1080, height: 1350 },
+  ],
+  custom: [
+    { ratio: 'custom', label: 'Custom', width: 1080, height: 1080 },
+  ],
+}
 
 type HistorySnapshot = Pick<
   CanvasState,
-  'objects' | 'objectOrder' | 'ratio' | 'frameHeight' | 'frames' | 'backgroundColor' | 'frameCount'
+  'objects' | 'objectOrder' | 'ratio' | 'frameWidth' | 'frameHeight' | 'frames' | 'backgroundColor' | 'frameCount'
 >
 
 const MAX_HISTORY = 50
@@ -31,7 +54,9 @@ interface CanvasState {
   selectedId: string | null
   selectedIds: string[]
   frameCount: number
+  platform: Platform
   ratio: FrameRatio
+  frameWidth: number
   frameHeight: number
   frames: Frame[]
   backgroundColor: string
@@ -67,7 +92,8 @@ interface CanvasState {
   toggleLock: (id: string) => void
   alignObjects: (anchor: 'left' | 'right' | 'top' | 'bottom' | 'centerH' | 'centerV') => void
   distributeObjects: (axis: 'horizontal' | 'vertical') => void
-  setRatio: (r: FrameRatio) => void
+  setRatio: (r: FrameRatio, width: number, height: number) => void
+  setPlatform: (p: Platform) => void
   setFrameBackground: (frameIndex: number, color: string | null) => void
   setCanvasBackground: (color: string) => void
   undo: () => void
@@ -120,12 +146,13 @@ function normalizeObjectsForSnapshot(objects: Record<string, CanvasObject>): Rec
 
 export const useCanvasStore = create<CanvasState>((set) => {
   function pushHistoryFrom(
-    state: Pick<CanvasState, 'objects' | 'objectOrder' | 'ratio' | 'frameHeight' | 'frames' | 'backgroundColor' | 'frameCount' | 'past'>
+    state: Pick<CanvasState, 'objects' | 'objectOrder' | 'ratio' | 'frameWidth' | 'frameHeight' | 'frames' | 'backgroundColor' | 'frameCount' | 'past'>
   ): HistorySnapshot[] {
     const snapshot: HistorySnapshot = {
       objects: normalizeObjectsForSnapshot(state.objects),
       objectOrder: state.objectOrder,
       ratio: state.ratio,
+      frameWidth: state.frameWidth,
       frameHeight: state.frameHeight,
       frames: state.frames,
       backgroundColor: state.backgroundColor,
@@ -144,7 +171,9 @@ export const useCanvasStore = create<CanvasState>((set) => {
     selectedId: null,
     selectedIds: [],
     frameCount: 2,
+    platform: 'instagram',
     ratio: 'square',
+    frameWidth: 1080,
     frameHeight: 1080,
     frames: makeFrames(2),
     backgroundColor: '#ffffff',
@@ -425,13 +454,27 @@ export const useCanvasStore = create<CanvasState>((set) => {
         }
       }),
 
-    setRatio: (r) =>
+    setRatio: (r, width, height) =>
       set((state) => ({
         past: pushHistoryFrom(state),
         future: [],
         ratio: r,
-        frameHeight: r === 'portrait' ? 1350 : 1080,
+        frameWidth: width,
+        frameHeight: height,
       })),
+
+    setPlatform: (p) =>
+      set((state) => {
+        const first = PLATFORM_PRESETS[p][0]
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          platform: p,
+          ratio: first.ratio,
+          frameWidth: first.width,
+          frameHeight: first.height,
+        }
+      }),
 
     setFrameBackground: (frameIndex, color) =>
       set((state) => {
@@ -461,6 +504,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           objects: state.objects,
           objectOrder: state.objectOrder,
           ratio: state.ratio,
+          frameWidth: state.frameWidth,
           frameHeight: state.frameHeight,
           frames: state.frames,
           backgroundColor: state.backgroundColor,
@@ -472,6 +516,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           objects: previous.objects,
           objectOrder: previous.objectOrder,
           ratio: previous.ratio,
+          frameWidth: previous.frameWidth,
           frameHeight: previous.frameHeight,
           frames: previous.frames,
           backgroundColor: previous.backgroundColor,
@@ -488,6 +533,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           objects: state.objects,
           objectOrder: state.objectOrder,
           ratio: state.ratio,
+          frameWidth: state.frameWidth,
           frameHeight: state.frameHeight,
           frames: state.frames,
           backgroundColor: state.backgroundColor,
@@ -499,6 +545,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           objects: next.objects,
           objectOrder: next.objectOrder,
           ratio: next.ratio,
+          frameWidth: next.frameWidth,
           frameHeight: next.frameHeight,
           frames: next.frames,
           backgroundColor: next.backgroundColor,
@@ -654,7 +701,9 @@ export const useCanvasStore = create<CanvasState>((set) => {
           objects: migratedObjects,
           objectOrder: project.objectOrder,
           frameCount: project.frameCount,
+          platform: project.platform ?? 'instagram',
           ratio: project.ratio,
+          frameWidth: project.dimensions.width,
           frameHeight: project.dimensions.height,
           frames: project.frames,
           backgroundColor: project.backgroundColor,

@@ -3,7 +3,7 @@ import { Stage, Layer, Rect as KonvaRect, Line as KonvaLine, Circle as KonvaCirc
 import type Konva from 'konva'
 import type { ImageObject, TextObject, ShapeObject, PathObject, AnchorPoint, CanvasObject } from '@/types/canvas'
 import type { ShapeKind } from '@/types/canvas'
-import { FRAME_WIDTH, CANVAS_SCALE } from './constants'
+import { CANVAS_SCALE } from './constants'
 import { useCanvasStore } from './useCanvasStore'
 import { useViewportStore } from './useViewportStore'
 import { FrameGuides } from './FrameGuides'
@@ -36,6 +36,7 @@ export function CarouselStage(): React.ReactElement {
   const setSelected = useCanvasStore((s) => s.setSelected)
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
   const frameCount = useCanvasStore((s) => s.frameCount)
+  const frameWidth = useCanvasStore((s) => s.frameWidth)
   const frameHeight = useCanvasStore((s) => s.frameHeight)
   const frames = useCanvasStore((s) => s.frames)
   const backgroundColor = useCanvasStore((s) => s.backgroundColor)
@@ -843,7 +844,7 @@ export function CarouselStage(): React.ReactElement {
         <Layer name="snap-guides" listening={false}>
           <SnapGuides
             guides={activeGuides}
-            totalWidth={frameCount * FRAME_WIDTH}
+            totalWidth={frameCount * frameWidth}
             totalHeight={frameHeight}
           />
         </Layer>

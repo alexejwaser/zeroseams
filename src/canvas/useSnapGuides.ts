@@ -1,5 +1,5 @@
 import type { CanvasObject, ImageObject } from '@/types/canvas'
-import { FRAME_WIDTH, SNAP_THRESHOLD } from './constants'
+import { SNAP_THRESHOLD } from './constants'
 import { useCanvasStore } from './useCanvasStore'
 
 export interface SnapGuide {
@@ -185,6 +185,7 @@ export function useSnapGuides(): {
   const objects = useCanvasStore((s) => s.objects)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const frameCount = useCanvasStore((s) => s.frameCount)
+  const frameWidth = useCanvasStore((s) => s.frameWidth)
   const frameHeight = useCanvasStore((s) => s.frameHeight)
 
   function getObjects(excludeId: string): CanvasObject[] {
@@ -195,11 +196,11 @@ export function useSnapGuides(): {
   }
 
   function boundComputeSnap(box: DragBox, excludeId: string) {
-    return computeSnap(box, getObjects(excludeId), frameCount, FRAME_WIDTH, frameHeight, SNAP_THRESHOLD)
+    return computeSnap(box, getObjects(excludeId), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
   function boundComputeSnapResize(box: DragBox, anchor: string, excludeId: string) {
-    return computeSnapResize(box, anchor, getObjects(excludeId), frameCount, FRAME_WIDTH, frameHeight, SNAP_THRESHOLD)
+    return computeSnapResize(box, anchor, getObjects(excludeId), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
   return { computeSnap: boundComputeSnap, computeSnapResize: boundComputeSnapResize }

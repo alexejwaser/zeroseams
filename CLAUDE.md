@@ -66,6 +66,7 @@ Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when 
 12: Export panel (all/single/range), image context menu actions, filename capture
 13: Shape tool (rect/ellipse/line/arrow), project load/save UI, text transform fix
 14: Pen/bezier tool, line tool endpoint fix
+19 (issue #5): Platform picker + aspect ratio — `Platform` type, `PLATFORM_PRESETS`, `frameWidth` store field, `setPlatform` action; `setRatio(r, w, h)` takes explicit dims; all `FRAME_WIDTH` constant uses replaced with live store value; Toolbar redesigned: platform `<select>` + dynamic per-platform ratio buttons + custom W×H inputs
 
 ## Upcoming (rough roadmap)
 - AI features: background removal UI, SAM segmentation, LaMa inpainting

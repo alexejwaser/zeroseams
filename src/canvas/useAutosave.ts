@@ -48,8 +48,9 @@ export function useAutosave(): { status: SaveStatus; lastSavedAt: string | null 
         const project: CarouselProject = {
           id: saveStore.projectId,
           name: saveStore.projectName,
+          platform: state.platform,
           ratio: state.ratio,
-          dimensions: { width: 1080, height: state.frameHeight as 1080 | 1350 },
+          dimensions: { width: state.frameWidth, height: state.frameHeight },
           frameCount,
           frames: state.frames,
           backgroundColor: state.backgroundColor,

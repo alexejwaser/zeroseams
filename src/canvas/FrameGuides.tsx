@@ -1,6 +1,6 @@
 import React from 'react'
 import { Rect, Line, Text, Group } from 'react-konva'
-import { FRAME_WIDTH } from './constants'
+import { useCanvasStore } from './useCanvasStore'
 import type { Frame } from '@/types/project'
 
 interface FrameGuidesProps {
@@ -11,7 +11,8 @@ interface FrameGuidesProps {
 }
 
 export function FrameGuides({ frameCount, frames, frameHeight, backgroundColor }: FrameGuidesProps): React.ReactElement {
-  const totalWidth = frameCount * FRAME_WIDTH
+  const frameWidth = useCanvasStore((s) => s.frameWidth)
+  const totalWidth = frameCount * frameWidth
 
   return (
     <Group>
@@ -22,9 +23,9 @@ export function FrameGuides({ frameCount, frames, frameHeight, backgroundColor }
         return (
           <Rect
             key={`bg-${i}`}
-            x={i * FRAME_WIDTH}
+            x={i * frameWidth}
             y={0}
-            width={FRAME_WIDTH}
+            width={frameWidth}
             height={frameHeight}
             fill={fill}
           />
@@ -33,7 +34,7 @@ export function FrameGuides({ frameCount, frames, frameHeight, backgroundColor }
 
       {/* Vertical dashed divider lines at frame boundaries (not outer edges) */}
       {Array.from({ length: frameCount - 1 }, (_, i) => {
-        const x = (i + 1) * FRAME_WIDTH
+        const x = (i + 1) * frameWidth
         return (
           <Line
             key={`divider-${i}`}
@@ -47,7 +48,7 @@ export function FrameGuides({ frameCount, frames, frameHeight, backgroundColor }
 
       {/* Frame number labels centered at top of each frame */}
       {Array.from({ length: frameCount }, (_, i) => {
-        const centerX = i * FRAME_WIDTH + FRAME_WIDTH / 2
+        const centerX = i * frameWidth + frameWidth / 2
         return (
           <Text
             key={`label-${i}`}

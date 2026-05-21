@@ -2,12 +2,14 @@ import type { CanvasObject } from './canvas'
 
 // CarouselProject — the top-level save/load unit for a Zero Seams project.
 
-export type FrameRatio = 'square' | 'portrait'
+export type Platform = 'instagram' | 'tiktok' | 'facebook' | 'threads' | 'custom'
 
-/** Pixel dimensions of a single Instagram frame */
+export type FrameRatio = 'square' | 'portrait' | 'story' | 'landscape' | 'custom'
+
+/** Pixel dimensions of a single frame */
 export interface FrameDimensions {
-  width: 1080
-  height: 1080 | 1350
+  width: number
+  height: number
 }
 
 /** One Instagram slide in the carousel */
@@ -25,6 +27,7 @@ export interface CarouselProject {
   name: string
 
   // --- Canvas layout ---
+  platform?: Platform
   ratio: FrameRatio
   dimensions: FrameDimensions
   frameCount: number

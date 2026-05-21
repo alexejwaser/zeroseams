@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useCanvasStore } from '@/canvas/useCanvasStore'
-import { FRAME_WIDTH } from '@/canvas/constants'
+import { useCanvasStore, PLATFORM_PRESETS } from '@/canvas/useCanvasStore'
 import { getStageInstance } from '@/canvas/CarouselStage'
 import { exportFrames, downloadFrames } from '@/canvas/exportFrames'
 import { useSaveStatusStore, type SaveStatus } from './useSaveStatusStore'
 import type { FrameRatio } from '@/types/project'
+import type { Platform } from '@/types/project'
 import type { CarouselProject } from '@/types/project'
 import type { ShapeKind } from '@/types/canvas'
 
@@ -26,12 +26,15 @@ const PEN_ICON = (
   </svg>
 )
 
-const RATIO_LABELS: Record<FrameRatio, string> = {
-  square: '1:1',
-  portrait: '4:5',
+const PLATFORM_LABELS: Record<Platform, string> = {
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  facebook: 'Facebook',
+  threads: 'Threads',
+  custom: 'Custom',
 }
 
-const RATIOS: FrameRatio[] = ['square', 'portrait']
+const PLATFORMS: Platform[] = ['instagram', 'tiktok', 'facebook', 'threads', 'custom']
 
 function SaveStatusPill({ status }: { status: SaveStatus }): React.ReactElement | null {
   if (status === 'idle') return null
@@ -70,7 +73,10 @@ export function Toolbar(): React.ReactElement {
   const saveStatus = useSaveStatusStore((s) => s.status)
   const ratio = useCanvasStore((s) => s.ratio)
   const setRatio = useCanvasStore((s) => s.setRatio)
+  const frameWidth = useCanvasStore((s) => s.frameWidth)
   const frameHeight = useCanvasStore((s) => s.frameHeight)
+  const platform = useCanvasStore((s) => s.platform)
+  const setPlatform = useCanvasStore((s) => s.setPlatform)
   const loadProject = useCanvasStore((s) => s.loadProject)
   const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
   const setActiveShapeKind = useCanvasStore((s) => s.setActiveShapeKind)
@@ -89,6 +95,10 @@ export function Toolbar(): React.ReactElement {
   const [recentFiles, setRecentFiles] = useState<Array<{ name: string; path: string; modifiedAt: string }>>([])
   const [loadingProject, setLoadingProject] = useState(false)
 
+  // Local state for custom dimension inputs
+  const [customW, setCustomW] = useState(frameWidth)
+  const [customH, setCustomH] = useState(frameHeight)
+
   const exportWrapperRef = useRef<HTMLDivElement>(null)
   const recentWrapperRef = useRef<HTMLDivElement>(null)
 
@@ -96,6 +106,12 @@ export function Toolbar(): React.ReactElement {
   useEffect(() => {
     setExportTo(frameCount)
   }, [frameCount])
+
+  // Sync custom inputs when frameWidth/frameHeight change externally
+  useEffect(() => {
+    setCustomW(frameWidth)
+    setCustomH(frameHeight)
+  }, [frameWidth, frameHeight])
 
   // Dismiss export panel on outside click
   useEffect(() => {
@@ -143,7 +159,7 @@ export function Toolbar(): React.ReactElement {
 
     setExporting(true)
     try {
-      const blobs = await exportFrames(stage, frameCount, FRAME_WIDTH, frameHeight, start, end)
+      const blobs = await exportFrames(stage, frameCount, frameWidth, frameHeight, start, end)
       await downloadFrames(blobs)
     } catch (err) {
       console.error('[export] failed:', err)
@@ -192,6 +208,20 @@ export function Toolbar(): React.ReactElement {
     setFrameCount(frameCount + 1)
   }
 
+  function commitCustomDimensions(): void {
+    const w = Math.max(100, Math.min(8000, customW))
+    const h = Math.max(100, Math.min(8000, customH))
+    setCustomW(w)
+    setCustomH(h)
+    setRatio('custom', w, h)
+  }
+
+  function handleCustomKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === 'Enter') {
+      commitCustomDimensions()
+    }
+  }
+
   const undoDisabled = past.length === 0
   const redoDisabled = future.length === 0
 
@@ -235,6 +265,8 @@ export function Toolbar(): React.ReactElement {
     padding: '0 4px',
     boxSizing: 'border-box',
   }
+
+  const presets = PLATFORM_PRESETS[platform]
 
   return (
     <div
@@ -421,7 +453,7 @@ export function Toolbar(): React.ReactElement {
         )}
       </div>
 
-      {/* Right: ratio toggle + frame count control + export + save status */}
+      {/* Right: platform selector + ratio presets + frame count + export + save status */}
       <div
         style={{
           display: 'flex',
@@ -431,7 +463,30 @@ export function Toolbar(): React.ReactElement {
           flex: '0 0 auto',
         }}
       >
-        {/* Ratio toggle */}
+        {/* Platform dropdown */}
+        <select
+          value={platform}
+          onChange={(e) => { setPlatform(e.target.value as Platform) }}
+          style={{
+            height: 28,
+            background: '#222',
+            color: '#aaa',
+            border: '1px solid #444',
+            borderRadius: 4,
+            fontSize: 12,
+            padding: '0 6px',
+            cursor: 'pointer',
+            outline: 'none',
+          }}
+        >
+          {PLATFORMS.map((p) => (
+            <option key={p} value={p}>
+              {PLATFORM_LABELS[p]}
+            </option>
+          ))}
+        </select>
+
+        {/* Ratio preset buttons */}
         <div
           style={{
             display: 'flex',
@@ -443,29 +498,52 @@ export function Toolbar(): React.ReactElement {
             border: '1px solid #444',
           }}
         >
-          {RATIOS.map((r) => (
+          {presets.map((preset) => (
             <button
-              key={r}
-              onClick={() => setRatio(r)}
-              title={r === 'square' ? 'Square (1080×1080)' : 'Portrait (1080×1350)'}
-              style={{
-                padding: '3px 10px',
-                height: 24,
-                background: ratio === r ? '#0af' : 'transparent',
-                color: ratio === r ? '#fff' : '#aaa',
-                border: 'none',
-                borderRadius: 3,
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: ratio === r ? 'bold' : 'normal',
-                transition: 'background 0.15s, color 0.15s',
-                whiteSpace: 'nowrap',
-              }}
+              key={preset.ratio}
+              onClick={() => { setRatio(preset.ratio as FrameRatio, preset.width, preset.height) }}
+              title={`${preset.label} (${preset.width}×${preset.height})`}
+              style={segmentButtonStyle(ratio === preset.ratio)}
             >
-              {RATIO_LABELS[r]}
+              {preset.label}
             </button>
           ))}
         </div>
+
+        {/* Custom dimension inputs — shown only for custom platform */}
+        {platform === 'custom' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <input
+              type="number"
+              min={100}
+              max={8000}
+              value={customW}
+              onChange={(e) => { setCustomW(Number(e.target.value)) }}
+              onBlur={commitCustomDimensions}
+              onKeyDown={handleCustomKeyDown}
+              style={{ ...numberInputStyle, width: 56 }}
+              title="Width"
+            />
+            <span style={{ color: '#666', fontSize: 12 }}>×</span>
+            <input
+              type="number"
+              min={100}
+              max={8000}
+              value={customH}
+              onChange={(e) => { setCustomH(Number(e.target.value)) }}
+              onBlur={commitCustomDimensions}
+              onKeyDown={handleCustomKeyDown}
+              style={{ ...numberInputStyle, width: 56 }}
+              title="Height"
+            />
+          </div>
+        )}
 
         <div style={{ width: 8 }} />
 
@@ -664,8 +742,9 @@ export function Toolbar(): React.ReactElement {
             const project: CarouselProject = {
               id: saveStore.projectId,
               name: saveStore.projectName,
+              platform: state.platform,
               ratio: state.ratio,
-              dimensions: { width: 1080, height: state.frameHeight as 1080 | 1350 },
+              dimensions: { width: state.frameWidth, height: state.frameHeight },
               frameCount: state.frameCount,
               frames: state.frames,
               backgroundColor: state.backgroundColor,
