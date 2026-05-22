@@ -26,6 +26,20 @@ const PEN_ICON = (
   </svg>
 )
 
+const CROP_ICON = (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+    <path d="M3 1v7h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M1 3h7v7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+
+const AUTOFILL_ICON = (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+    <rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+    <rect x="3.5" y="3.5" width="5" height="5" rx="0.5" fill="currentColor"/>
+  </svg>
+)
+
 const PLATFORM_LABELS: Record<Platform, string> = {
   instagram: 'Instagram',
   tiktok: 'TikTok',
@@ -77,6 +91,8 @@ export function Toolbar(): React.ReactElement {
   const frameHeight = useCanvasStore((s) => s.frameHeight)
   const platform = useCanvasStore((s) => s.platform)
   const setPlatform = useCanvasStore((s) => s.setPlatform)
+  const resizeMode = useCanvasStore((s) => s.resizeMode)
+  const setResizeMode = useCanvasStore((s) => s.setResizeMode)
   const loadProject = useCanvasStore((s) => s.loadProject)
   const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
   const setActiveShapeKind = useCanvasStore((s) => s.setActiveShapeKind)
@@ -463,6 +479,20 @@ export function Toolbar(): React.ReactElement {
           flex: '0 0 auto',
         }}
       >
+        {/* Resize mode toggle */}
+        <div style={{ display: 'flex', gap: 2, padding: 2, background: '#222', border: '1px solid #444', borderRadius: 4, marginLeft: 8 }}>
+          <button
+            title="Advanced: frame clips content"
+            onClick={() => setResizeMode('advanced')}
+            style={segmentButtonStyle(resizeMode === 'advanced')}
+          >{CROP_ICON}</button>
+          <button
+            title="Auto: content fills frame on resize"
+            onClick={() => setResizeMode('auto')}
+            style={segmentButtonStyle(resizeMode === 'auto')}
+          >{AUTOFILL_ICON}</button>
+        </div>
+
         {/* Platform dropdown */}
         <select
           value={platform}

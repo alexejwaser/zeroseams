@@ -1340,6 +1340,22 @@ export function PropertiesPanel(): React.ReactElement {
 
               <button
                 onClick={() => {
+                  if (!selectedId || !imgObj.naturalWidth || !imgObj.naturalHeight) return
+                  const aspect = imgObj.naturalWidth / imgObj.naturalHeight
+                  commitUpdate(selectedId, { contentHeight: Math.round(imgObj.contentWidth / aspect) })
+                }}
+                style={{
+                  width: '100%', height: 30,
+                  background: '#333', color: '#fff',
+                  border: '1px solid #555', borderRadius: 4,
+                  cursor: 'pointer', fontSize: 12, marginBottom: 6,
+                }}
+              >
+                Reset Aspect Ratio
+              </button>
+
+              <button
+                onClick={() => {
                   if (!selectedId) return
                   const theta = imgObj.rotation * (Math.PI / 180)
                   const cosTheta = Math.cos(theta)

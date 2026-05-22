@@ -55,6 +55,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
   const addToSelection = useCanvasStore((s) => s.addToSelection)
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
+  const resizeMode = useCanvasStore((s) => s.resizeMode)
   const { computeSnap, computeSnapResize } = useSnapGuides()
 
   // Memoized so React-Konva sees the same object reference between renders while
@@ -220,6 +221,17 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         if (inner) { inner.x(0); inner.y(0) }
         img.x(obj.contentOffsetX)
         img.y(obj.contentOffsetY)
+      } else if (resizeMode === 'auto') {
+        const aspect = obj.contentWidth / obj.contentHeight
+        const fAspect = newWidth / newHeight
+        let cW, cH
+        if (aspect > fAspect) { cH = newHeight; cW = cH * aspect }
+        else { cW = newWidth; cH = cW / aspect }
+        if (inner) { inner.x(0); inner.y(0) }
+        img.x((newWidth - cW) / 2)
+        img.y((newHeight - cH) / 2)
+        img.width(cW)
+        img.height(cH)
       } else {
         // Normal resize: keep image at its stored offset and shift the inner group
         // instead. When a mask is present the inner group is cached — moving img.x
@@ -358,6 +370,23 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         height: newFrameHeight,
         contentOffsetX: obj.contentOffsetX,
         contentOffsetY: obj.contentOffsetY,
+      })
+    } else if (resizeMode === 'auto') {
+      const aspect = obj.contentWidth / obj.contentHeight
+      const fAspect = newFrameWidth / newFrameHeight
+      let cW, cH
+      if (aspect > fAspect) { cH = newFrameHeight; cW = cH * aspect }
+      else { cW = newFrameWidth; cH = cW / aspect }
+      const offsetX = (newFrameWidth - cW) / 2
+      const offsetY = (newFrameHeight - cH) / 2
+      if (img) { img.x(offsetX); img.y(offsetY); img.width(cW); img.height(cH) }
+      commitUpdate(obj.id, {
+        frameX: newFrameX, frameY: newFrameY,
+        frameWidth: newFrameWidth, frameHeight: newFrameHeight,
+        rotation: newRotation, x: newFrameX, y: newFrameY,
+        width: newFrameWidth, height: newFrameHeight,
+        contentOffsetX: offsetX, contentOffsetY: offsetY,
+        contentWidth: cW, contentHeight: cH,
       })
     } else {
       const newContentOffsetX = obj.contentOffsetX + (obj.frameX - newFrameX)

@@ -60,6 +60,9 @@ export interface ImageObject extends BaseCanvasObject {
   contentOffsetY: number
   contentWidth: number
   contentHeight: number
+  /** Intrinsic pixel dimensions of the original image bitmap */
+  naturalWidth: number
+  naturalHeight: number
 
   // --- Edit mode ---
   /** When true, transformer targets the image content rather than the frame */

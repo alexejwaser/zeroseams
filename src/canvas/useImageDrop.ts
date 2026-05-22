@@ -59,7 +59,10 @@ export function useImageDrop(containerRef: React.RefObject<HTMLDivElement>): voi
             contentOffsetY: 0,
             contentWidth: w,
             contentHeight: h,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
             contentEditMode: false,
+            maskEditMode: false,
             // keep in sync with frame for compatibility
             x: frameX,
             y: frameY,

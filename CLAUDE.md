@@ -30,8 +30,12 @@ Desktop Electron app for creating seamless Instagram carousels. One long horizon
 Two-layer model — never collapse:
 - Frame (`frameX/Y`, `frameWidth/Height`) = visible crop viewport; `x/y/width/height` kept in sync for compatibility
 - Content (`contentOffsetX/Y`, `contentWidth/Height`) = image bitmap floating inside frame
+- `naturalWidth/naturalHeight` on `ImageObject` = intrinsic pixel dims of the original bitmap (set at drop time, never changes)
 - `contentEditMode: boolean` — false=frame transformer (blue), true=double-click enters content mode (orange #ff7043)
 - Transformer is always a sibling of the Group, never inside it; Rect (not Group) is the transform target in frame mode
+- **Global `resizeMode`** in store (`'advanced' | 'auto'`), toggled via Toolbar crop/auto-fill icons:
+  - `'advanced'` (default): frame resize crops — content stays at its canvas position
+  - `'auto'`: frame resize cover-fits (fills) content to new frame, centered — CMD+drag and pure rotation still override
 
 **Multi-Select**
 - `selectedId` — drives Properties Panel (single-object props)
@@ -67,6 +71,7 @@ Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when 
 13: Shape tool (rect/ellipse/line/arrow), project load/save UI, text transform fix
 14: Pen/bezier tool, line tool endpoint fix
 19 (issue #5): Platform picker + aspect ratio — `Platform` type, `PLATFORM_PRESETS`, `frameWidth` store field, `setPlatform` action; `setRatio(r, w, h)` takes explicit dims; all `FRAME_WIDTH` constant uses replaced with live store value; Toolbar redesigned: platform `<select>` + dynamic per-platform ratio buttons + custom W×H inputs
+20 (issue #9): Frame resize modes — global `resizeMode: 'advanced' | 'auto'` in store; `'auto'` cover-fits content on frame resize (SCRL-style); crop/auto-fill icon toggle in Toolbar; `naturalWidth/naturalHeight` on `ImageObject`; "Reset Aspect Ratio" button in content-edit mode restores intrinsic proportions
 
 ## Upcoming (rough roadmap)
 - AI features: background removal UI, SAM segmentation, LaMa inpainting
