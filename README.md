@@ -27,12 +27,28 @@ Zero Seams gives you one long canvas that you slice into frames — perfect for 
 
 ## Running Locally
 
-Requires Node.js 18+.
+**Requirements:** Node.js 18+ and npm 9+.
 
 ```bash
 git clone https://github.com/alexejwaser/zeroseams.git
 cd zeroseams
 npm install
+npm run dev
+```
+
+### If you see `Error: Electron uninstall` after `npm install`
+
+This means the Electron binary wasn't downloaded — the postinstall download can fail due to network timeouts or proxies. Fix it by running the install script manually, then retry:
+
+```bash
+node node_modules/electron/install.js
+npm run dev
+```
+
+If that still fails, reinstall Electron directly:
+
+```bash
+npm install electron --save-dev
 npm run dev
 ```
 
