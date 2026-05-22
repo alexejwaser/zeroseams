@@ -1,11 +1,44 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, dirname } from 'path'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { join, dirname, basename, extname } from 'path'
 import { writeFile, readFile, readdir, stat, mkdir } from 'fs/promises'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
+import { spawn } from 'child_process'
+import chokidar from 'chokidar'
 
 function getZeroSeamsDir(): string {
   return join(homedir(), 'Documents', 'ZeroSeams')
 }
+
+function getPreferencesPath(): string {
+  return join(app.getPath('userData'), 'preferences.json')
+}
+
+interface Preferences {
+  defaultExternalEditor?: ExternalEditor | null
+}
+
+interface ExternalEditor {
+  name: string
+  execPath: string
+}
+
+async function readPreferences(): Promise<Preferences> {
+  try {
+    const raw = await readFile(getPreferencesPath(), 'utf-8')
+    return JSON.parse(raw) as Preferences
+  } catch {
+    return {}
+  }
+}
+
+async function writePreferences(prefs: Preferences): Promise<void> {
+  await writeFile(getPreferencesPath(), JSON.stringify(prefs, null, 2), 'utf-8')
+}
+
+const watchers = new Map<string, chokidar.FSWatcher>()
+const tempFiles = new Map<string, string>()
+
+let mainWindow: BrowserWindow | null = null
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -23,6 +56,8 @@ function createWindow() {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  mainWindow = win
+  win.on('closed', () => { mainWindow = null })
 }
 
 ipcMain.handle(
@@ -134,6 +169,106 @@ ipcMain.handle('list-recent-projects', async () => {
     // Directory doesn't exist yet
     return { files: [] }
   }
+})
+
+ipcMain.handle('get-external-editor', async () => {
+  const prefs = await readPreferences()
+  return prefs.defaultExternalEditor ?? null
+})
+
+ipcMain.handle('set-external-editor', async () => {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const filters =
+    process.platform === 'darwin'
+      ? [{ name: 'Applications', extensions: ['app'] }]
+      : process.platform === 'win32'
+        ? [{ name: 'Executables', extensions: ['exe'] }]
+        : []
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Choose External Editor',
+    properties: ['openFile'],
+    filters,
+  })
+  if (canceled || filePaths.length === 0) return null
+  const execPath = filePaths[0]
+  const name = basename(execPath, extname(execPath))
+  const editor: ExternalEditor = { name, execPath }
+  const prefs = await readPreferences()
+  await writePreferences({ ...prefs, defaultExternalEditor: editor })
+  return editor
+})
+
+ipcMain.handle(
+  'edit-in-external-app',
+  async (
+    _event,
+    {
+      objectId,
+      base64,
+      projectFilePath,
+    }: { objectId: string; base64: string; mimeType: string; projectFilePath: string | null },
+  ) => {
+    // Stop any existing watcher for this object
+    const existing = watchers.get(objectId)
+    if (existing) {
+      await existing.close()
+      watchers.delete(objectId)
+    }
+
+    // Determine file location — stable per objectId so the same file is reused on repeat edits
+    let tempPath: string
+    if (projectFilePath) {
+      const editDir = join(dirname(projectFilePath), 'externally-edited')
+      await mkdir(editDir, { recursive: true })
+      tempPath = join(editDir, `${objectId}.png`)
+    } else {
+      tempPath = join(tmpdir(), `zeroseams-${objectId}.png`)
+    }
+
+    await writeFile(tempPath, Buffer.from(base64, 'base64'))
+    tempFiles.set(objectId, tempPath)
+
+    const prefs = await readPreferences()
+    const editor = prefs.defaultExternalEditor
+
+    if (editor) {
+      if (process.platform === 'darwin') {
+        spawn('open', ['-a', editor.execPath, tempPath])
+      } else {
+        spawn(editor.execPath, [tempPath])
+      }
+    } else {
+      await shell.openPath(tempPath)
+    }
+
+    const watcher = chokidar.watch(tempPath, {
+      awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+    })
+    watcher.on('change', () => {
+      void (async () => {
+        try {
+          const buf = await readFile(tempPath)
+          const newBase64 = buf.toString('base64')
+          mainWindow?.webContents.send('external-image-changed', { objectId, base64: newBase64 })
+        } catch (err) {
+          console.error('[main] error reading changed file:', err)
+        }
+      })()
+    })
+    watchers.set(objectId, watcher)
+
+    return { success: true }
+  },
+)
+
+ipcMain.handle('stop-external-edit', async (_event, { objectId }: { objectId: string }) => {
+  const watcher = watchers.get(objectId)
+  if (watcher) {
+    await watcher.close()
+    watchers.delete(objectId)
+  }
+  tempFiles.delete(objectId)
+  return { success: true }
 })
 
 app.whenReady().then(createWindow)

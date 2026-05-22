@@ -1,0 +1,42 @@
+interface ExternalEditor {
+  name: string
+  execPath: string
+}
+
+interface Window {
+  electronAPI: {
+    platform: string
+    saveFile(
+      filename: string,
+      base64: string,
+    ): Promise<{ success: boolean; error?: string }>
+    autosaveProject(
+      filename: string,
+      json: string,
+    ): Promise<{ success: boolean; filePath?: string; error?: string }>
+    openProject(): Promise<{ success: boolean; json?: string; error?: string }>
+    listRecentProjects(): Promise<{
+      files: Array<{ name: string; path: string; modifiedAt: string }>
+    }>
+    saveProjectAs(
+      json: string,
+    ): Promise<{ success: boolean; filePath?: string; error?: string }>
+    saveProject(
+      filePath: string,
+      json: string,
+    ): Promise<{ success: boolean; error?: string }>
+    getSystemFonts(): Promise<string[]>
+    getExternalEditor(): Promise<ExternalEditor | null>
+    setExternalEditor(): Promise<ExternalEditor | null>
+    editInExternalApp(
+      objectId: string,
+      base64: string,
+      mimeType: string,
+      projectFilePath: string | null,
+    ): Promise<{ success: boolean; error?: string }>
+    stopExternalEdit(objectId: string): Promise<{ success: boolean }>
+    onExternalImageChanged(
+      cb: (data: { objectId: string; base64: string }) => void,
+    ): () => void
+  }
+}

@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useBackgroundRemoval } from '../ai/useBackgroundRemoval'
 import { useAIStore } from '../ai/useAIStore'
+import { useExternalEdit } from '../canvas/useExternalEdit'
+import { useSaveStatusStore } from './useSaveStatusStore'
 import type { ImageObject } from '../types/canvas'
 
 interface MenuItemProps {
@@ -83,6 +85,10 @@ export function ContextMenu(): React.ReactElement | null {
 
   const { removeBg } = useBackgroundRemoval()
   const operations = useAIStore((s) => s.operations)
+  const { editExternally } = useExternalEdit()
+  const currentFilePath = useSaveStatusStore((s) => s.currentFilePath)
+  const autosaveFilePath = useSaveStatusStore((s) => s.autosaveFilePath)
+  const effectiveFilePath = currentFilePath ?? autosaveFilePath
 
   const menuRef = useRef<HTMLDivElement>(null)
   const [clampedPos, setClampedPos] = useState<{ left: number; top: number } | null>(null)
@@ -248,6 +254,14 @@ export function ContextMenu(): React.ReactElement | null {
                         contentOffsetY: (img.frameHeight - img.contentHeight * scale) / 2,
                       })
                       setContextMenu(null)
+                    }}
+                  />
+                  <MenuItem
+                    label="Edit Externally"
+                    disabled={locked}
+                    onClick={() => {
+                      void editExternally(targetId, effectiveFilePath)
+                      dismiss()
                     }}
                   />
                 </>
