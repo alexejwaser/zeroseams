@@ -20,4 +20,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('save-project', { filePath, json }),
   getSystemFonts: (): Promise<string[]> =>
     ipcRenderer.invoke('get-system-fonts'),
+  getExternalEditor: (): Promise<{ name: string; execPath: string } | null> =>
+    ipcRenderer.invoke('get-external-editor'),
+  setExternalEditor: (): Promise<{ name: string; execPath: string } | null> =>
+    ipcRenderer.invoke('set-external-editor'),
+  editInExternalApp: (
+    objectId: string,
+    base64: string,
+    mimeType: string,
+    projectFilePath: string | null,
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('edit-in-external-app', { objectId, base64, mimeType, projectFilePath }),
+  stopExternalEdit: (objectId: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('stop-external-edit', { objectId }),
+  onExternalImageChanged: (
+    cb: (data: { objectId: string; base64: string }) => void,
+  ): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: { objectId: string; base64: string }) =>
+      cb(data)
+    ipcRenderer.on('external-image-changed', handler)
+    return () => { ipcRenderer.removeListener('external-image-changed', handler) }
+  },
 })

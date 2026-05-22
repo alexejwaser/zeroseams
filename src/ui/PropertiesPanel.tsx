@@ -1,8 +1,10 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useThumbnailStore } from '@/canvas/useThumbnailStore'
 import { useAI } from '@/ai'
 import { useAIStore } from '@/ai'
+import { useExternalEdit } from '@/canvas/useExternalEdit'
+import { useSaveStatusStore } from './useSaveStatusStore'
 import type { BackgroundRemovalOperation } from '@/types/ai'
 import type { ImageObject, TextObject, ShapeObject, PathObject, FontStyle, MaskData } from '@/types/canvas'
 import type { Frame } from '@/types/project'
@@ -837,6 +839,21 @@ export function PropertiesPanel(): React.ReactElement {
   const operations = useAIStore((s) => s.operations)
   const clearOperation = useAIStore((s) => s.clearOperation)
 
+  const { editExternally, stopEditing, activeObjectId } = useExternalEdit()
+  const currentFilePath = useSaveStatusStore((s) => s.currentFilePath)
+  const autosaveFilePath = useSaveStatusStore((s) => s.autosaveFilePath)
+  const effectiveFilePath = currentFilePath ?? autosaveFilePath
+  const [externalEditor, setExternalEditor] = useState<ExternalEditor | null>(null)
+
+  useEffect(() => {
+    void window.electronAPI.getExternalEditor().then(setExternalEditor)
+  }, [])
+
+  async function pickNewEditor(): Promise<void> {
+    const editor = await window.electronAPI.setExternalEditor()
+    if (editor) setExternalEditor(editor)
+  }
+
   const selectedObj = selectedId !== null ? objects[selectedId] : null
   const isImage = selectedObj?.type === 'image'
   const isText = selectedObj?.type === 'text'
@@ -1497,6 +1514,91 @@ export function PropertiesPanel(): React.ReactElement {
               >
                 Remove BG
               </button>
+            )}
+          </div>
+        )}
+
+        {/* External Editor section — images only */}
+        {!isMultiSelect && isImage && selectedId !== null && (
+          <div
+            style={{
+              padding: 12,
+              borderTop: '1px solid #333',
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                color: '#aaa',
+                fontSize: 11,
+                fontWeight: 'bold',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                marginBottom: 8,
+              }}
+            >
+              External Editor
+            </div>
+            <div style={{ color: '#666', fontSize: 11, marginBottom: 6 }}>
+              {externalEditor ? `Default: ${externalEditor.name}` : 'No default editor set'}
+            </div>
+            {activeObjectId === selectedId ? (
+              <>
+                <div style={{ color: '#52b788', fontSize: 12, marginBottom: 6 }}>
+                  Watching for changes…
+                </div>
+                <button
+                  onClick={() => { void stopEditing(selectedId) }}
+                  style={{
+                    width: '100%',
+                    height: 28,
+                    background: '#2a2a2a',
+                    color: '#aaa',
+                    border: '1px solid #444',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                  }}
+                >
+                  Stop Watching
+                </button>
+              </>
+            ) : (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={() => { void editExternally(selectedId, effectiveFilePath) }}
+                  style={{
+                    flex: 1,
+                    height: 32,
+                    background: '#2a2a2a',
+                    color: '#e0e0e0',
+                    border: '1px solid #444',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                  }}
+                >
+                  {externalEditor != null ? `Edit in ${externalEditor.name}` : 'Edit Externally'}
+                </button>
+                {externalEditor != null && (
+                  <button
+                    onClick={() => { void pickNewEditor() }}
+                    title="Change default editor"
+                    style={{
+                      height: 32,
+                      padding: '0 10px',
+                      background: '#2a2a2a',
+                      color: '#888',
+                      border: '1px solid #444',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                    }}
+                  >
+                    Change
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
