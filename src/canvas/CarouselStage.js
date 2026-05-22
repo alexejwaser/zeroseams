@@ -1,0 +1,685 @@
+import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
+import { useRef, useEffect, useState } from 'react';
+import { Stage, Layer, Rect as KonvaRect, Line as KonvaLine, Circle as KonvaCircle, Path as KonvaPath, Ellipse as KonvaEllipse } from 'react-konva';
+import { CANVAS_SCALE } from './constants';
+import { useCanvasStore } from './useCanvasStore';
+import { useViewportStore } from './useViewportStore';
+import { FrameGuides } from './FrameGuides';
+import { CanvasImageNode } from './CanvasImageNode';
+import { CanvasTextNode } from './CanvasTextNode';
+import { CanvasShapeNode } from './CanvasShapeNode';
+import { CanvasPathNode, computePathBBox, anchorsToPathData } from './CanvasPathNode';
+import { SnapGuides } from './SnapGuides';
+import { useImageDrop } from './useImageDrop';
+import { useAutosave } from './useAutosave';
+import { useKeyboardShortcuts } from './useKeyboardShortcuts';
+import { useThumbnailGenerator } from './useThumbnailStore';
+export { exportFrames } from './exportFrames';
+// Module-level mutable reference so external callers can access the stage
+// instance without prop drilling (used by useCarouselExport / getStageInstance).
+let _stageInstance = null;
+export function getStageInstance() {
+    return _stageInstance;
+}
+export function CarouselStage() {
+    const stageRef = useRef(null);
+    const containerRef = useRef(null);
+    const objects = useCanvasStore((s) => s.objects);
+    const objectOrder = useCanvasStore((s) => s.objectOrder);
+    const selectedId = useCanvasStore((s) => s.selectedId);
+    const setSelected = useCanvasStore((s) => s.setSelected);
+    const setSelectedIds = useCanvasStore((s) => s.setSelectedIds);
+    const frameCount = useCanvasStore((s) => s.frameCount);
+    const frameWidth = useCanvasStore((s) => s.frameWidth);
+    const frameHeight = useCanvasStore((s) => s.frameHeight);
+    const frames = useCanvasStore((s) => s.frames);
+    const backgroundColor = useCanvasStore((s) => s.backgroundColor);
+    const addObject = useCanvasStore((s) => s.addObject);
+    const updateObject = useCanvasStore((s) => s.updateObject);
+    const commitUpdate = useCanvasStore((s) => s.commitUpdate);
+    const removeObject = useCanvasStore((s) => s.removeObject);
+    const activeTool = useCanvasStore((s) => s.activeTool);
+    const setActiveTool = useCanvasStore((s) => s.setActiveTool);
+    const clearContentEditMode = useCanvasStore((s) => s.clearContentEditMode);
+    const clearPathEditMode = useCanvasStore((s) => s.clearPathEditMode);
+    const clearMaskEditMode = useCanvasStore((s) => s.clearMaskEditMode);
+    const maskDrawMode = useCanvasStore((s) => s.maskDrawMode);
+    const clearMaskDrawMode = useCanvasStore((s) => s.clearMaskDrawMode);
+    const setContextMenu = useCanvasStore((s) => s.setContextMenu);
+    const activeShapeKind = useCanvasStore((s) => s.activeShapeKind);
+    // Viewport store
+    const zoom = useViewportStore((s) => s.zoom);
+    const panX = useViewportStore((s) => s.panX);
+    const panY = useViewportStore((s) => s.panY);
+    const setZoom = useViewportStore((s) => s.setZoom);
+    const setPan = useViewportStore((s) => s.setPan);
+    const [activeGuides, setActiveGuides] = useState([]);
+    const [previewShape, setPreviewShape] = useState(null);
+    const drawStartRef = useRef(null);
+    // Pen tool state — in-progress path ID is tracked via ref; anchors live in store
+    const currentPenPathIdRef = useRef(null);
+    const [penCursorPos, setPenCursorPos] = useState(null);
+    const penMouseDownPosRef = useRef(null);
+    const penDragRef = useRef(null);
+    // Mask draw state — all positions in canvas coords
+    const maskDrawStartRef = useRef(null);
+    const [maskPenAnchors, setMaskPenAnchors] = useState([]);
+    const maskPenDownRef = useRef(null);
+    const maskPenDragRef = useRef(null);
+    const [maskCursorPos, setMaskCursorPos] = useState(null);
+    // Container size (for Stage width/height)
+    const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
+    // Pan state
+    const isPanningRef = useRef(false);
+    const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+    const [isSpacePanning, setIsSpacePanning] = useState(false);
+    const spacePanActiveRef = useRef(false);
+    useImageDrop(containerRef);
+    useAutosave();
+    useKeyboardShortcuts();
+    useThumbnailGenerator();
+    useEffect(() => {
+        _stageInstance = stageRef.current;
+        return () => {
+            _stageInstance = null;
+        };
+    }, []);
+    // ResizeObserver — keep containerSize in sync with the actual DOM size
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el)
+            return;
+        const ro = new ResizeObserver((entries) => {
+            const { width, height } = entries[0].contentRect;
+            setContainerSize({ width, height });
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    // Space key — pan mode
+    useEffect(() => {
+        function onKeyDown(e) {
+            if (e.code === 'Space' &&
+                !(e.target instanceof HTMLInputElement) &&
+                !(e.target instanceof HTMLTextAreaElement) &&
+                !(e.target instanceof HTMLElement && e.target.isContentEditable)) {
+                e.preventDefault();
+                spacePanActiveRef.current = true;
+                setIsSpacePanning(true);
+            }
+        }
+        function onKeyUp(e) {
+            if (e.code === 'Space') {
+                spacePanActiveRef.current = false;
+                setIsSpacePanning(false);
+            }
+        }
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+        };
+    }, []);
+    // Mask draw mode: reset local state when mode is cleared
+    useEffect(() => {
+        if (maskDrawMode === null) {
+            setMaskPenAnchors([]);
+            setMaskCursorPos(null);
+            maskDrawStartRef.current = null;
+            maskPenDownRef.current = null;
+            maskPenDragRef.current = null;
+        }
+    }, [maskDrawMode]);
+    // Pen tool: Escape commits the open path (not closed)
+    useEffect(() => {
+        if (activeTool !== 'pen')
+            return;
+        function onKey(e) {
+            if (e.key === 'Escape')
+                commitPenPath(false);
+        }
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTool]);
+    // When switching away from pen tool mid-drawing, commit the in-progress path
+    useEffect(() => {
+        if (activeTool === 'pen')
+            return;
+        const pathId = currentPenPathIdRef.current;
+        if (!pathId)
+            return;
+        currentPenPathIdRef.current = null;
+        setPenCursorPos(null);
+        const currentPath = useCanvasStore.getState().objects[pathId];
+        if (!currentPath)
+            return;
+        if (currentPath.anchors.length < 2) {
+            removeObject(pathId);
+            setSelected(null);
+            return;
+        }
+        const bbox = computePathBBox(currentPath.anchors);
+        commitUpdate(pathId, {
+            closed: false, fill: 'transparent', pathEditMode: false,
+            x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height,
+        });
+    }, [activeTool]); // intentionally only activeTool in deps
+    function commitPenPath(closed) {
+        const pathId = currentPenPathIdRef.current;
+        currentPenPathIdRef.current = null;
+        setPenCursorPos(null);
+        if (pathId === null)
+            return;
+        const currentPath = useCanvasStore.getState().objects[pathId];
+        if (!currentPath)
+            return;
+        if (currentPath.anchors.length < 2) {
+            // Not enough anchors — remove the stub path
+            removeObject(pathId);
+            setSelected(null);
+            return;
+        }
+        const bbox = computePathBBox(currentPath.anchors);
+        commitUpdate(pathId, {
+            closed,
+            fill: closed ? 'rgba(68,136,255,0.2)' : 'transparent',
+            pathEditMode: closed, // auto-enter edit mode only when closed (Escape = false)
+            x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height,
+        });
+        setActiveTool('select');
+    }
+    function toContentSpace(cx, cy, imgId) {
+        const img = objects[imgId];
+        if (!img)
+            return { x: cx, y: cy };
+        return { x: cx - img.frameX - img.contentOffsetX, y: cy - img.frameY - img.contentOffsetY };
+    }
+    function commitMaskDraw(anchors) {
+        if (!maskDrawMode)
+            return;
+        commitUpdate(maskDrawMode.id, { mask: { anchors, feather: 0, inverted: false, visible: true } });
+        clearMaskDrawMode();
+    }
+    // --- Wheel: non-passive native listener to prevent browser scroll during zoom ---
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el)
+            return;
+        function onWheel(e) {
+            e.preventDefault();
+            const { zoom, panX, panY } = useViewportStore.getState();
+            if (e.ctrlKey) {
+                // Pinch-to-zoom (macOS reports pinch as ctrlKey+wheel) or Ctrl+scroll
+                const rect = el.getBoundingClientRect();
+                const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+                const newZoom = Math.max(0.1, Math.min(8, zoom * factor));
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                const canvasX = (mouseX - panX) / (CANVAS_SCALE * zoom);
+                const canvasY = (mouseY - panY) / (CANVAS_SCALE * zoom);
+                useViewportStore.getState().setZoom(newZoom);
+                useViewportStore.getState().setPan(mouseX - canvasX * CANVAS_SCALE * newZoom, mouseY - canvasY * CANVAS_SCALE * newZoom);
+            }
+            else {
+                // Two-finger scroll (trackpad) or plain mouse wheel → pan
+                useViewportStore.getState().setPan(panX - e.deltaX, panY - e.deltaY);
+            }
+        }
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, []); // empty deps — containerRef.current is stable
+    // --- Pan handlers: middle mouse or space+left ---
+    function handleContainerMouseDown(e) {
+        if (e.button === 1 || (e.button === 0 && spacePanActiveRef.current)) {
+            e.preventDefault();
+            isPanningRef.current = true;
+            panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
+        }
+    }
+    function handleContainerMouseMove(e) {
+        if (!isPanningRef.current)
+            return;
+        const dx = e.clientX - panStartRef.current.x;
+        const dy = e.clientY - panStartRef.current.y;
+        setPan(panStartRef.current.panX + dx, panStartRef.current.panY + dy);
+    }
+    function handleContainerMouseUp() {
+        isPanningRef.current = false;
+    }
+    return (_jsxs("div", { ref: containerRef, style: {
+            width: '100%',
+            height: '100%',
+            overflow: 'hidden',
+            position: 'relative',
+            cursor: isSpacePanning ? 'grab'
+                : maskDrawMode ? 'crosshair'
+                    : activeTool === 'text' ? 'text'
+                        : (activeTool === 'shape' || activeTool === 'pen') ? 'crosshair'
+                            : 'default',
+        }, onMouseDown: handleContainerMouseDown, onMouseMove: handleContainerMouseMove, onMouseUp: handleContainerMouseUp, onMouseLeave: handleContainerMouseUp, children: [_jsxs(Stage, { ref: stageRef, width: containerSize.width, height: containerSize.height, x: panX, y: panY, scaleX: CANVAS_SCALE * zoom, scaleY: CANVAS_SCALE * zoom, onMouseDown: (e) => {
+                    // Block Stage events when panning
+                    if (isPanningRef.current)
+                        return;
+                    // --- Mask draw mode ---
+                    if (maskDrawMode !== null) {
+                        const stage = e.target.getStage();
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        if (!pos)
+                            return;
+                        const cx = pos.x;
+                        const cy = pos.y;
+                        if (maskDrawMode.tool === 'rect' || maskDrawMode.tool === 'ellipse') {
+                            maskDrawStartRef.current = { x: cx, y: cy };
+                        }
+                        else {
+                            maskPenDownRef.current = { x: cx, y: cy };
+                            maskPenDragRef.current = null;
+                        }
+                        return;
+                    }
+                    // --- Pen tool ---
+                    if (activeTool === 'pen') {
+                        if (e.target !== e.target.getStage())
+                            return;
+                        const stage = e.target.getStage();
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        if (!pos)
+                            return;
+                        penMouseDownPosRef.current = { x: pos.x, y: pos.y };
+                        penDragRef.current = null;
+                        return;
+                    }
+                    if (e.target !== e.target.getStage())
+                        return;
+                    if (activeTool === 'text') {
+                        const stage = e.target.getStage();
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        if (!pos)
+                            return;
+                        const canvasX = pos.x;
+                        const canvasY = pos.y;
+                        const newId = crypto.randomUUID();
+                        addObject({
+                            id: newId,
+                            type: 'text',
+                            scope: 'global',
+                            spans: [{ text: 'Double-click to edit' }],
+                            fontFamily: 'sans-serif',
+                            fontSize: 48,
+                            fontStyle: 'normal',
+                            align: 'left',
+                            fill: '#000000',
+                            letterSpacing: 0,
+                            lineHeight: 1.2,
+                            x: canvasX,
+                            y: canvasY,
+                            width: 400,
+                            height: 60,
+                            rotation: 0,
+                            scaleX: 1,
+                            scaleY: 1,
+                            opacity: 1,
+                            visible: true,
+                            locked: false,
+                            zIndex: objectOrder.length,
+                        });
+                        setSelected(newId);
+                        setActiveTool('select');
+                    }
+                    else if (activeTool === 'shape') {
+                        if (e.target !== e.target.getStage())
+                            return;
+                        const stage = e.target.getStage();
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        if (!pos)
+                            return;
+                        const canvasX = pos.x;
+                        const canvasY = pos.y;
+                        const newId = crypto.randomUUID();
+                        drawStartRef.current = { x: canvasX, y: canvasY, id: newId };
+                        setPreviewShape({ kind: activeShapeKind, x: canvasX, y: canvasY, width: 1, height: 1 });
+                    }
+                    else {
+                        setSelected(null);
+                        setSelectedIds([]);
+                        clearContentEditMode();
+                        clearPathEditMode();
+                        clearMaskEditMode();
+                        setActiveGuides([]);
+                    }
+                }, onMouseMove: (e) => {
+                    // Block Stage events when panning
+                    if (isPanningRef.current)
+                        return;
+                    // --- Mask draw mode cursor tracking ---
+                    if (maskDrawMode !== null) {
+                        const stage = e.target.getStage();
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        if (!pos)
+                            return;
+                        const cx = pos.x;
+                        const cy = pos.y;
+                        setMaskCursorPos({ x: cx, y: cy });
+                        if (maskDrawMode.tool === 'pen' && maskPenDownRef.current) {
+                            maskPenDragRef.current = { dx: cx - maskPenDownRef.current.x, dy: cy - maskPenDownRef.current.y };
+                        }
+                        return;
+                    }
+                    // --- Pen tool cursor tracking ---
+                    if (activeTool === 'pen') {
+                        const stage = e.target.getStage();
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        if (!pos)
+                            return;
+                        const cx = pos.x;
+                        const cy = pos.y;
+                        setPenCursorPos({ x: cx, y: cy });
+                        if (penMouseDownPosRef.current) {
+                            penDragRef.current = {
+                                dx: cx - penMouseDownPosRef.current.x,
+                                dy: cy - penMouseDownPosRef.current.y,
+                            };
+                        }
+                        return;
+                    }
+                    if (!drawStartRef.current || previewShape === null)
+                        return;
+                    const stage = e.target.getStage();
+                    if (!stage)
+                        return;
+                    const pos = stage.getRelativePointerPosition();
+                    if (!pos)
+                        return;
+                    const curX = pos.x;
+                    const curY = pos.y;
+                    // Lines and arrows track both endpoints, not a normalised bounding box
+                    if (activeShapeKind === 'line' || activeShapeKind === 'arrow') {
+                        setPreviewShape((prev) => prev === null ? null : {
+                            kind: prev.kind,
+                            x: drawStartRef.current.x,
+                            y: drawStartRef.current.y,
+                            width: curX - drawStartRef.current.x,
+                            height: curY - drawStartRef.current.y,
+                            x2: curX,
+                            y2: curY,
+                        });
+                    }
+                    else {
+                        const x = Math.min(drawStartRef.current.x, curX);
+                        const y = Math.min(drawStartRef.current.y, curY);
+                        const width = Math.max(1, Math.abs(curX - drawStartRef.current.x));
+                        const height = Math.max(1, Math.abs(curY - drawStartRef.current.y));
+                        setPreviewShape((prev) => prev === null ? null : { kind: prev.kind, x, y, width, height });
+                    }
+                }, onMouseUp: () => {
+                    // Block Stage events when panning
+                    if (isPanningRef.current)
+                        return;
+                    // --- Mask draw mode: place shape or anchor ---
+                    if (maskDrawMode !== null) {
+                        const stage = stageRef.current;
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        if (!pos)
+                            return;
+                        const cx = pos.x;
+                        const cy = pos.y;
+                        const { id, tool } = maskDrawMode;
+                        if (tool === 'rect' || tool === 'ellipse') {
+                            const start = maskDrawStartRef.current;
+                            maskDrawStartRef.current = null;
+                            if (!start)
+                                return;
+                            const x1 = Math.min(start.x, cx);
+                            const y1 = Math.min(start.y, cy);
+                            const x2 = Math.max(start.x, cx);
+                            const y2 = Math.max(start.y, cy);
+                            if (x2 - x1 < 5 || y2 - y1 < 5)
+                                return;
+                            if (tool === 'rect') {
+                                const corners = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+                                commitMaskDraw(corners.map(c => ({ ...toContentSpace(c.x, c.y, id), handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } })));
+                            }
+                            else {
+                                const K = 0.5523;
+                                const ecx = (x1 + x2) / 2;
+                                const ecy = (y1 + y2) / 2;
+                                const rx = (x2 - x1) / 2;
+                                const ry = (y2 - y1) / 2;
+                                const ellipseAnchors = [
+                                    { x: ecx, y: ecy - ry, handleIn: { dx: -K * rx, dy: 0 }, handleOut: { dx: K * rx, dy: 0 } },
+                                    { x: ecx + rx, y: ecy, handleIn: { dx: 0, dy: -K * ry }, handleOut: { dx: 0, dy: K * ry } },
+                                    { x: ecx, y: ecy + ry, handleIn: { dx: K * rx, dy: 0 }, handleOut: { dx: -K * rx, dy: 0 } },
+                                    { x: ecx - rx, y: ecy, handleIn: { dx: 0, dy: K * ry }, handleOut: { dx: 0, dy: -K * ry } },
+                                ];
+                                commitMaskDraw(ellipseAnchors.map(a => { const cs = toContentSpace(a.x, a.y, id); return { ...a, x: cs.x, y: cs.y }; }));
+                            }
+                            return;
+                        }
+                        // Pen tool
+                        const downPos = maskPenDownRef.current;
+                        maskPenDownRef.current = null;
+                        if (!downPos)
+                            return;
+                        const drag = maskPenDragRef.current;
+                        maskPenDragRef.current = null;
+                        const isDrag = drag !== null && Math.hypot(drag.dx, drag.dy) > 3;
+                        const newAnchor = isDrag
+                            ? { x: downPos.x, y: downPos.y, handleIn: { dx: -drag.dx, dy: -drag.dy }, handleOut: { dx: drag.dx, dy: drag.dy } }
+                            : { x: downPos.x, y: downPos.y, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } };
+                        if (maskPenAnchors.length >= 3) {
+                            const first = maskPenAnchors[0];
+                            if (Math.hypot(cx - first.x, cy - first.y) < 12) {
+                                commitMaskDraw(maskPenAnchors.map(a => { const cs = toContentSpace(a.x, a.y, id); return { ...a, x: cs.x, y: cs.y }; }));
+                                setMaskPenAnchors([]);
+                                return;
+                            }
+                        }
+                        setMaskPenAnchors(prev => [...prev, newAnchor]);
+                        return;
+                    }
+                    // --- Pen tool: place anchor ---
+                    if (activeTool === 'pen') {
+                        const stage = stageRef.current;
+                        if (!stage)
+                            return;
+                        const pos = stage.getRelativePointerPosition();
+                        const downPos = penMouseDownPosRef.current;
+                        penMouseDownPosRef.current = null;
+                        if (!pos || !downPos)
+                            return;
+                        const cx = pos.x;
+                        const cy = pos.y;
+                        const drag = penDragRef.current;
+                        penDragRef.current = null;
+                        const isDrag = drag !== null && Math.hypot(drag.dx, drag.dy) > 3;
+                        const newAnchor = isDrag
+                            ? {
+                                x: downPos.x, y: downPos.y,
+                                handleIn: { dx: -drag.dx, dy: -drag.dy },
+                                handleOut: { dx: drag.dx, dy: drag.dy },
+                            }
+                            : { x: downPos.x, y: downPos.y, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } };
+                        const pathId = currentPenPathIdRef.current;
+                        if (pathId === null) {
+                            // First anchor — create path in store immediately
+                            const newId = crypto.randomUUID();
+                            addObject({
+                                id: newId, type: 'path', scope: 'global',
+                                anchors: [newAnchor],
+                                closed: false,
+                                fill: 'transparent', stroke: '#4488ff', strokeWidth: 2,
+                                pathEditMode: false,
+                                x: newAnchor.x, y: newAnchor.y, width: 0, height: 0,
+                                rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, visible: true, locked: false,
+                                zIndex: objectOrder.length,
+                            });
+                            setSelected(newId);
+                            currentPenPathIdRef.current = newId;
+                        }
+                        else {
+                            // Subsequent anchor — get current path from store and append
+                            const currentPath = objects[pathId];
+                            if (!currentPath) {
+                                currentPenPathIdRef.current = null;
+                                return;
+                            }
+                            // Check: clicking near first anchor closes the path
+                            if (currentPath.anchors.length >= 2) {
+                                const first = currentPath.anchors[0];
+                                if (Math.hypot(cx - first.x, cy - first.y) < 12) {
+                                    commitPenPath(true);
+                                    return;
+                                }
+                            }
+                            const newAnchors = [...currentPath.anchors, newAnchor];
+                            const bbox = computePathBBox(newAnchors);
+                            updateObject(pathId, {
+                                anchors: newAnchors,
+                                x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height,
+                            });
+                        }
+                        return;
+                    }
+                    const drawStart = drawStartRef.current;
+                    const preview = previewShape;
+                    drawStartRef.current = null;
+                    setPreviewShape(null);
+                    if (!drawStart || !preview)
+                        return;
+                    // Discard misclicks (tiny drag)
+                    if (preview.width < 5 && preview.height < 5)
+                        return;
+                    const isLineKind = preview.kind === 'line' || preview.kind === 'arrow';
+                    const finalX2 = isLineKind ? (preview.x2 ?? preview.x + preview.width) : undefined;
+                    const finalY2 = isLineKind ? (preview.y2 ?? preview.y + preview.height) : undefined;
+                    addObject({
+                        id: drawStart.id,
+                        type: 'shape',
+                        kind: preview.kind,
+                        scope: 'global',
+                        x: preview.x,
+                        y: preview.y,
+                        width: isLineKind ? Math.abs((finalX2 ?? 0) - preview.x) : preview.width,
+                        height: isLineKind ? Math.abs((finalY2 ?? 0) - preview.y) : preview.height,
+                        ...(isLineKind ? { x2: finalX2, y2: finalY2 } : {}),
+                        rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, visible: true, locked: false,
+                        zIndex: objectOrder.length, fill: '#4488ff', stroke: 'transparent', strokeWidth: 0, cornerRadius: 0,
+                    });
+                    setSelected(drawStart.id);
+                    setActiveTool('select');
+                }, onContextMenu: (e) => {
+                    e.evt.preventDefault();
+                    setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: null });
+                }, children: [_jsx(Layer, { name: "guides", listening: false, children: _jsx(FrameGuides, { frameCount: frameCount, frames: frames, frameHeight: frameHeight, backgroundColor: backgroundColor }) }), _jsxs(Layer, { name: "objects", children: [objectOrder.map((id) => {
+                                const obj = objects[id];
+                                if (!obj || !obj.visible)
+                                    return null;
+                                if (obj.type === 'image') {
+                                    return (_jsx(CanvasImageNode, { obj: obj, isSelected: selectedId === id, onSelect: () => setSelected(id), onGuidesChange: setActiveGuides }, id));
+                                }
+                                if (obj.type === 'text') {
+                                    return (_jsx(CanvasTextNode, { obj: obj, isSelected: selectedId === id, onSelect: () => setSelected(id), onGuidesChange: setActiveGuides }, id));
+                                }
+                                if (obj.type === 'shape') {
+                                    return (_jsx(CanvasShapeNode, { obj: obj, isSelected: selectedId === id, onSelect: () => { setSelected(id); }, onGuidesChange: setActiveGuides }, id));
+                                }
+                                if (obj.type === 'path') {
+                                    return (_jsx(CanvasPathNode, { obj: obj, isSelected: selectedId === id, onSelect: () => setSelected(id), onGuidesChange: setActiveGuides }, id));
+                                }
+                                return null; // other types TBD
+                            }), previewShape !== null && (previewShape.kind === 'line' || previewShape.kind === 'arrow') && (_jsx(KonvaLine, { points: [
+                                    previewShape.x, previewShape.y,
+                                    previewShape.x2 ?? previewShape.x + previewShape.width,
+                                    previewShape.y2 ?? previewShape.y + previewShape.height,
+                                ], stroke: "#4488ff", strokeWidth: 2, strokeScaleEnabled: false, dash: [6, 4], listening: false, perfectDrawEnabled: false })), previewShape !== null && previewShape.kind !== 'line' && previewShape.kind !== 'arrow' && (_jsx(KonvaRect, { x: previewShape.x, y: previewShape.y, width: previewShape.width, height: previewShape.height, fill: "rgba(68, 136, 255, 0.15)", stroke: "#4488ff", strokeWidth: 1, strokeScaleEnabled: false, dash: [6, 4], listening: false, perfectDrawEnabled: false })), maskDrawMode && maskCursorPos && (() => {
+                                const { tool } = maskDrawMode;
+                                const start = maskDrawStartRef.current;
+                                if (tool === 'rect' && start) {
+                                    const x = Math.min(start.x, maskCursorPos.x);
+                                    const y = Math.min(start.y, maskCursorPos.y);
+                                    const w = Math.abs(maskCursorPos.x - start.x);
+                                    const h = Math.abs(maskCursorPos.y - start.y);
+                                    return _jsx(KonvaRect, { x: x, y: y, width: w, height: h, stroke: "#0af", strokeWidth: 1, strokeScaleEnabled: false, dash: [4, 3], fill: "rgba(0,170,255,0.08)", listening: false });
+                                }
+                                if (tool === 'ellipse' && start) {
+                                    const x = Math.min(start.x, maskCursorPos.x);
+                                    const y = Math.min(start.y, maskCursorPos.y);
+                                    const w = Math.abs(maskCursorPos.x - start.x);
+                                    const h = Math.abs(maskCursorPos.y - start.y);
+                                    return _jsx(KonvaEllipse, { x: x + w / 2, y: y + h / 2, radiusX: w / 2, radiusY: h / 2, stroke: "#0af", strokeWidth: 1, strokeScaleEnabled: false, dash: [4, 3], fill: "rgba(0,170,255,0.08)", listening: false });
+                                }
+                                if (tool === 'pen' && maskPenAnchors.length > 0) {
+                                    const lastAnchor = maskPenAnchors[maskPenAnchors.length - 1];
+                                    const drag = maskPenDragRef.current;
+                                    const downPos = maskPenDownRef.current;
+                                    const isDragging = downPos !== null && drag !== null && Math.hypot(drag.dx, drag.dy) > 3;
+                                    const ghostX = isDragging ? downPos.x : maskCursorPos.x;
+                                    const ghostY = isDragging ? downPos.y : maskCursorPos.y;
+                                    const ghostAnchor = {
+                                        x: ghostX, y: ghostY,
+                                        handleIn: isDragging ? { dx: -drag.dx, dy: -drag.dy } : { dx: 0, dy: 0 },
+                                        handleOut: isDragging ? { dx: drag.dx, dy: drag.dy } : { dx: 0, dy: 0 },
+                                    };
+                                    const previewData = anchorsToPathData([lastAnchor, ghostAnchor], false);
+                                    const placedData = maskPenAnchors.length >= 2 ? anchorsToPathData(maskPenAnchors, false) : null;
+                                    const isNearFirst = maskPenAnchors.length >= 3 &&
+                                        Math.hypot(maskCursorPos.x - maskPenAnchors[0].x, maskCursorPos.y - maskPenAnchors[0].y) < 12;
+                                    return (_jsxs(_Fragment, { children: [placedData && _jsx(KonvaPath, { data: placedData, fill: "transparent", stroke: "#0af", strokeWidth: 1, strokeScaleEnabled: false, listening: false, perfectDrawEnabled: false }), previewData && _jsx(KonvaPath, { data: previewData, fill: "transparent", stroke: "#0af", strokeWidth: 1, strokeScaleEnabled: false, dash: [4, 3], listening: false, perfectDrawEnabled: false }), isDragging && _jsxs(_Fragment, { children: [_jsx(KonvaLine, { points: [ghostX - drag.dx, ghostY - drag.dy, ghostX + drag.dx, ghostY + drag.dy], stroke: "#0096ff", strokeWidth: 1, strokeScaleEnabled: false, dash: [3, 2], listening: false }), _jsx(KonvaCircle, { x: ghostX - drag.dx, y: ghostY - drag.dy, radius: 3, fill: "#fff", stroke: "#0096ff", strokeWidth: 1.5, listening: false }), _jsx(KonvaCircle, { x: ghostX + drag.dx, y: ghostY + drag.dy, radius: 3, fill: "#fff", stroke: "#0096ff", strokeWidth: 1.5, listening: false })] }), maskPenAnchors.map((a, i) => (_jsx(KonvaCircle, { x: a.x, y: a.y, radius: i === 0 && maskPenAnchors.length >= 3 ? 7 : 5, fill: i === 0 && isNearFirst ? '#ff4488' : '#0af', stroke: "#fff", strokeWidth: 1.5, listening: false }, i)))] }));
+                                }
+                                return null;
+                            })(), activeTool === 'pen' && penCursorPos && (() => {
+                                const pathId = currentPenPathIdRef.current;
+                                const currentPenPath = pathId ? objects[pathId] : undefined;
+                                const penAnchors = currentPenPath?.anchors ?? [];
+                                if (penAnchors.length === 0)
+                                    return null;
+                                const lastAnchor = penAnchors[penAnchors.length - 1];
+                                // During drag: anchor lands at mousedown pos; cursor is the handle endpoint.
+                                // During hover: anchor ghost is at cursor with no handles.
+                                const drag = penDragRef.current;
+                                const downPos = penMouseDownPosRef.current;
+                                const isDragging = downPos !== null && drag !== null && Math.hypot(drag.dx, drag.dy) > 3;
+                                const ghostX = isDragging ? downPos.x : penCursorPos.x;
+                                const ghostY = isDragging ? downPos.y : penCursorPos.y;
+                                const ghostAnchor = {
+                                    x: ghostX, y: ghostY,
+                                    handleIn: isDragging ? { dx: -drag.dx, dy: -drag.dy } : { dx: 0, dy: 0 },
+                                    handleOut: isDragging ? { dx: drag.dx, dy: drag.dy } : { dx: 0, dy: 0 },
+                                };
+                                const previewData = anchorsToPathData([lastAnchor, ghostAnchor], false);
+                                const isNearFirst = penAnchors.length >= 2 &&
+                                    Math.hypot(penCursorPos.x - penAnchors[0].x, penCursorPos.y - penAnchors[0].y) < 12;
+                                return (_jsxs(_Fragment, { children: [previewData && (_jsx(KonvaPath, { data: previewData, fill: "transparent", stroke: "#4488ff", strokeWidth: 1, strokeScaleEnabled: false, dash: [4, 3], listening: false, perfectDrawEnabled: false })), isDragging && (_jsxs(_Fragment, { children: [_jsx(KonvaLine, { points: [
+                                                        ghostX - drag.dx, ghostY - drag.dy,
+                                                        ghostX + drag.dx, ghostY + drag.dy,
+                                                    ], stroke: "#0096ff", strokeWidth: 1, strokeScaleEnabled: false, dash: [3, 2], listening: false, perfectDrawEnabled: false }), _jsx(KonvaCircle, { x: ghostX - drag.dx, y: ghostY - drag.dy, radius: 3, fill: "#fff", stroke: "#0096ff", strokeWidth: 1.5, listening: false }), _jsx(KonvaCircle, { x: ghostX + drag.dx, y: ghostY + drag.dy, radius: 3, fill: "#fff", stroke: "#0096ff", strokeWidth: 1.5, listening: false })] })), penAnchors.map((a, i) => (_jsx(KonvaCircle, { x: a.x, y: a.y, radius: i === 0 && penAnchors.length >= 2 ? 7 : 5, fill: i === 0 && isNearFirst ? '#ff4488' : '#4488ff', stroke: "#fff", strokeWidth: 1.5, listening: false }, i)))] }));
+                            })()] }), _jsx(Layer, { name: "snap-guides", listening: false, children: _jsx(SnapGuides, { guides: activeGuides, totalWidth: frameCount * frameWidth, totalHeight: frameHeight }) })] }), _jsxs("div", { style: {
+                    position: 'absolute',
+                    bottom: 12,
+                    left: 12,
+                    background: 'rgba(0,0,0,0.5)',
+                    color: '#aaa',
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                    zIndex: 10,
+                }, children: [Math.round(CANVAS_SCALE * zoom * 100), "%"] })] }));
+}
