@@ -39,8 +39,11 @@ Two-layer model — never collapse:
 
 **Multi-Select**
 - `selectedId` — drives Properties Panel (single-object props)
-- `selectedIds[]` — drives align/distribute and multi-select highlight
-- `setSelected(id)` sets both; `addToSelection(id)` (shift+click) appends to `selectedIds`
+- `selectedIds[]` — drives group transformer, align/distribute, and multi-select highlight
+- `anchorId` — reference object for alignment; objects align TO its bbox when set; shows gold `#f5a623` border
+- `setSelected(id)` sets both; `addToSelection(id)` (shift+click) appends to `selectedIds`; clicking an already-selected object in multi-select mode promotes it to `anchorId`
+- When `selectedIds.length > 1`: group `<Transformer>` in CarouselStage is active; individual node transformers and draggable are suppressed; marquee drag on empty canvas (ref: `isMarqueeActiveRef`) selects by overlap
+- `commitMultipleUpdates(patches)` / `removeMultipleObjects(ids)` — atomic batch ops with single history entry
 
 **Shape/Ellipse convention**: store uses bounding-box top-left `(x, y)` for ALL types. Konva Ellipse uses center — convert at render time.
 
@@ -76,6 +79,8 @@ Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when 
 22 (issue #11): External photo editing — Lightroom-style "Edit in X" workflow; `chokidar@3` watches a stable PNG per objectId in `externally-edited/` next to the `.zeroseams` file; `src/types/electron.d.ts` (new) types `window.electronAPI` globally, fixing pre-existing TS errors; 4 new IPC handlers in `src/electron/index.ts` (`get/set-external-editor`, `edit-in-external-app`, `stop-external-edit`); editor preference persisted in `userData/preferences.json`; `src/canvas/useExternalEdit.ts` (new) renderer-side hook that preserves `originalSrc` on first edit; `autosaveFilePath` added to `useSaveStatusStore` so the externally-edited folder always resolves next to the project file even without an explicit Save As; "Edit Externally" in context menu + "External Editor" section in Properties Panel with dynamic editor name, Change button, and watching-state indicator
 
 23 (issue #6): File management save button — replaced the single "Save As…" button on the right with a split-button on the left toolbar (next to Open): "Save" primary (overwrites `currentFilePath` or opens Save As dialog on first save) + "▾" dropdown with "Save As…" (always prompts, updates `currentFilePath`) and "Save a Copy…" (always prompts, does NOT update `currentFilePath`); new `save-project-copy` IPC handler + `saveProjectCopy` in preload + type; autosave and ⌘S/⌘⇧S shortcuts unchanged
+
+24 (issue #4): Rework multi-object selection — group transformer: single Konva `<Transformer>` in `CarouselStage` wires to all selected nodes (`nodeRefMapRef` + `nodeRef` prop on all 4 node components); resize/rotate/drag apply to full group (one undo step via `commitMultipleUpdates`); marquee rubber-band selection on empty canvas drag (`isMarqueeActiveRef`, `marqueeCurrentRef`), Shift+drag extends selection; reference object (`anchorId` in store): click selected object → gold `#f5a623` border, Layer Panel `★` button, Properties Panel "Reference" dropdown — `alignObjects` aligns TO anchor bbox when set; individual transformers and `draggable` suppressed when `selectedIds.length > 1`; keyboard shortcuts extended: Delete/arrow nudge/Cmd+D all act on full `selectedIds[]` (single undo step each); new store actions: `commitMultipleUpdates`, `removeMultipleObjects`, `setAnchor`
 
 ## Upcoming (rough roadmap)
 - AI features: background removal UI, SAM segmentation, LaMa inpainting
