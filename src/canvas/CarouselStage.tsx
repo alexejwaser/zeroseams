@@ -236,18 +236,26 @@ export function CarouselStage(): React.ReactElement {
     if (!el) return
     function onWheel(e: WheelEvent): void {
       e.preventDefault()
-      const rect = el!.getBoundingClientRect()
       const { zoom, panX, panY } = useViewportStore.getState()
-      const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08
-      const newZoom = Math.max(0.1, Math.min(8, zoom * factor))
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-      const canvasX = (mouseX - panX) / (CANVAS_SCALE * zoom)
-      const canvasY = (mouseY - panY) / (CANVAS_SCALE * zoom)
-      const newPanX = mouseX - canvasX * CANVAS_SCALE * newZoom
-      const newPanY = mouseY - canvasY * CANVAS_SCALE * newZoom
-      useViewportStore.getState().setZoom(newZoom)
-      useViewportStore.getState().setPan(newPanX, newPanY)
+
+      if (e.ctrlKey) {
+        // Pinch-to-zoom (macOS reports pinch as ctrlKey+wheel) or Ctrl+scroll
+        const rect = el!.getBoundingClientRect()
+        const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08
+        const newZoom = Math.max(0.1, Math.min(8, zoom * factor))
+        const mouseX = e.clientX - rect.left
+        const mouseY = e.clientY - rect.top
+        const canvasX = (mouseX - panX) / (CANVAS_SCALE * zoom)
+        const canvasY = (mouseY - panY) / (CANVAS_SCALE * zoom)
+        useViewportStore.getState().setZoom(newZoom)
+        useViewportStore.getState().setPan(
+          mouseX - canvasX * CANVAS_SCALE * newZoom,
+          mouseY - canvasY * CANVAS_SCALE * newZoom,
+        )
+      } else {
+        // Two-finger scroll (trackpad) or plain mouse wheel → pan
+        useViewportStore.getState().setPan(panX - e.deltaX, panY - e.deltaY)
+      }
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
