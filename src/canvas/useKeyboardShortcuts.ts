@@ -3,7 +3,8 @@ import { useCanvasStore } from './useCanvasStore'
 import { useViewportStore } from './useViewportStore'
 import { useSaveStatusStore } from '@/ui/useSaveStatusStore'
 import type { CarouselProject } from '@/types/project'
-import type { ImageObject, ShapeObject } from '@/types/canvas'
+import type { ImageObject, PathObject, ShapeObject } from '@/types/canvas'
+import { computePathBBox } from './CanvasPathNode'
 
 function buildProjectSnapshot(
   state: ReturnType<typeof useCanvasStore.getState>,
@@ -40,7 +41,9 @@ export function useKeyboardShortcuts(): void {
   const sendToBack = useCanvasStore((s) => s.sendToBack)
   const toggleLock = useCanvasStore((s) => s.toggleLock)
   const removeObject = useCanvasStore((s) => s.removeObject)
+  const removeMultipleObjects = useCanvasStore((s) => s.removeMultipleObjects)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+  const commitMultipleUpdates = useCanvasStore((s) => s.commitMultipleUpdates)
   const moveObject = useCanvasStore((s) => s.moveObject)
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
@@ -55,7 +58,7 @@ export function useKeyboardShortcuts(): void {
 
       // Read current state at event time (not captured in closure)
       const state = useCanvasStore.getState()
-      const { selectedId, objects } = state
+      const { selectedId, selectedIds, objects } = state
 
       // Tool shortcuts (no modifier)
       if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -93,6 +96,11 @@ export function useKeyboardShortcuts(): void {
 
       // Backspace / Delete
       if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (selectedIds.length > 1) {
+          e.preventDefault()
+          removeMultipleObjects(selectedIds)
+          return
+        }
         if (!selectedId) return
         e.preventDefault()
         removeObject(selectedId)
@@ -101,15 +109,43 @@ export function useKeyboardShortcuts(): void {
 
       // Arrow keys — nudge
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (selectedIds.length === 0 && !selectedId) return
+        e.preventDefault()
+        const delta = e.shiftKey ? 10 : 1
+        const dx = e.key === 'ArrowLeft' ? -delta : e.key === 'ArrowRight' ? delta : 0
+        const dy = e.key === 'ArrowUp' ? -delta : e.key === 'ArrowDown' ? delta : 0
+
+        if (selectedIds.length > 1) {
+          const patches: Record<string, import('@/types/canvas').CanvasObject> = {}
+          for (const id of selectedIds) {
+            const o = objects[id]
+            if (!o || o.locked) continue
+            if (o.type === 'image') {
+              const img = o as ImageObject
+              patches[id] = { ...img, frameX: img.frameX + dx, frameY: img.frameY + dy, x: img.x + dx, y: img.y + dy }
+            } else if (o.type === 'path') {
+              const p = o as PathObject
+              const newAnchors = p.anchors.map((a) => ({ ...a, x: a.x + dx, y: a.y + dy }))
+              const bbox = computePathBBox(newAnchors)
+              patches[id] = { ...p, anchors: newAnchors, x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height }
+            } else if (o.type === 'shape') {
+              const s = o as ShapeObject
+              if (s.kind === 'line' || s.kind === 'arrow') {
+                patches[id] = { ...s, x: s.x + dx, y: s.y + dy, x2: (s.x2 ?? s.x + s.width) + dx, y2: (s.y2 ?? s.y + s.height) + dy }
+              } else {
+                patches[id] = { ...o, x: o.x + dx, y: o.y + dy }
+              }
+            } else {
+              patches[id] = { ...o, x: o.x + dx, y: o.y + dy }
+            }
+          }
+          commitMultipleUpdates(patches as Record<string, import('@/types/canvas').CanvasObject>)
+          return
+        }
+
         if (!selectedId) return
         const obj = objects[selectedId]
         if (!obj || obj.locked) return
-        e.preventDefault()
-        const delta = e.shiftKey ? 10 : 1
-        const dx =
-          e.key === 'ArrowLeft' ? -delta : e.key === 'ArrowRight' ? delta : 0
-        const dy =
-          e.key === 'ArrowUp' ? -delta : e.key === 'ArrowDown' ? delta : 0
         if (obj.type === 'image') {
           const img = obj as ImageObject
           commitUpdate(selectedId, {
@@ -198,6 +234,14 @@ export function useKeyboardShortcuts(): void {
 
         if (e.key === 'd') {
           e.preventDefault()
+          if (selectedIds.length > 1) {
+            for (const id of selectedIds) {
+              const o = objects[id]
+              if (!o || o.locked) continue
+              duplicateObject(id)
+            }
+            return
+          }
           if (!selectedId) return
           const obj = objects[selectedId]
           if (!obj || obj.locked) return
@@ -268,7 +312,9 @@ export function useKeyboardShortcuts(): void {
     sendToBack,
     toggleLock,
     removeObject,
+    removeMultipleObjects,
     commitUpdate,
+    commitMultipleUpdates,
     moveObject,
     undo,
     redo,

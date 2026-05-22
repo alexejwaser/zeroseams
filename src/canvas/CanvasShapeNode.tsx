@@ -18,18 +18,24 @@ interface CanvasShapeNodeProps {
   isSelected: boolean
   onSelect: () => void
   onGuidesChange: (guides: SnapGuide[]) => void
+  nodeRef?: React.RefObject<Konva.Node>
 }
 
-export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: CanvasShapeNodeProps): React.ReactElement {
+export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasShapeNodeProps): React.ReactElement {
   const shapeRef = useRef<Konva.Shape>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const updateObject = useCanvasStore((s) => s.updateObject)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const anchorId = useCanvasStore((s) => s.anchorId)
+  const setAnchor = useCanvasStore((s) => s.setAnchor)
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const { computeSnap, computeSnapResize } = useSnapGuides()
+
+  const isInMultiSelectMode = selectedIds.length > 1
+  const isAnchor = anchorId === obj.id
   const pendingGuidesRef = useRef<SnapGuide[]>([])
 
   const altHeldRef = useRef(false)
@@ -38,11 +44,23 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
   const pendingDuplicateRef = useRef(false)
   const lineDragOriginRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
-  // Wire transformer when selected/locked state changes
+  // Sync nodeRef so CarouselStage group transformer can attach to this Konva node
+  useEffect(() => {
+    if (nodeRef) {
+      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = shapeRef.current
+    }
+  })
+
+  // Wire transformer when selected/locked state changes; suppress when group transformer is active
   useEffect(() => {
     const tr = transformerRef.current
     const node = shapeRef.current
     if (!tr || !node) return
+    if (isInMultiSelectMode) {
+      tr.nodes([])
+      tr.getLayer()?.draw()
+      return
+    }
     if (isSelected) {
       if (obj.kind === 'line' || obj.kind === 'arrow') {
         tr.nodes([])
@@ -66,7 +84,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
       tr.nodes([])
       tr.getLayer()?.draw()
     }
-  }, [isSelected, obj.locked, obj.kind])
+  }, [isSelected, isInMultiSelectMode, obj.locked, obj.kind])
 
   useEffect(() => {
     const onDown = (e: KeyboardEvent): void => { if (e.altKey) altHeldRef.current = true }
@@ -115,11 +133,13 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
     node.scaleY(1)
   }
 
-  const isInMultiSelect = selectedIds.includes(obj.id) && !isSelected
+  const isInMultiSelect = isInMultiSelectMode && selectedIds.includes(obj.id)
 
   function handleClick(e: Konva.KonvaEventObject<MouseEvent>): void {
     if (e.evt.shiftKey) {
       addToSelection(obj.id)
+    } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
+      setAnchor(anchorId === obj.id ? null : obj.id)
     } else {
       onSelect()
     }
@@ -291,7 +311,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
       {isInMultiSelect && (obj.kind === 'line' || obj.kind === 'arrow') && (
         <KonvaLine
           points={[obj.x, obj.y, obj.x2 ?? obj.x + obj.width, obj.y2 ?? obj.y + obj.height]}
-          stroke="#0096ff" strokeWidth={1} strokeScaleEnabled={false}
+          stroke={isAnchor ? '#f5a623' : '#0096ff'} strokeWidth={isAnchor ? 2 : 1} strokeScaleEnabled={false}
           perfectDrawEnabled={false} listening={false}
         />
       )}
@@ -303,8 +323,8 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
           height={obj.height}
           rotation={obj.rotation}
           fill="transparent"
-          stroke="#0096ff"
-          strokeWidth={1}
+          stroke={isAnchor ? '#f5a623' : '#0096ff'}
+          strokeWidth={isAnchor ? 2 : 1}
           strokeScaleEnabled={false}
           perfectDrawEnabled={false}
           listening={false}
@@ -326,7 +346,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
           opacity={obj.opacity}
           rotation={obj.rotation}
           perfectDrawEnabled={false}
-          draggable={!obj.locked}
+          draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
           onTap={onSelect}
           onDragStart={handleDragStart}
@@ -352,7 +372,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
           opacity={obj.opacity}
           rotation={obj.rotation}
           perfectDrawEnabled={false}
-          draggable={!obj.locked}
+          draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
           onTap={onSelect}
           onDragStart={handleDragStart}
@@ -380,7 +400,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange }: C
               strokeWidth={Math.max(lw, 16)}
               strokeScaleEnabled={false}
               listening={!obj.locked}
-              draggable={!obj.locked}
+              draggable={!obj.locked && !isInMultiSelectMode}
               onClick={handleClick}
               onTap={onSelect}
               onDragStart={handleLineDragStart}

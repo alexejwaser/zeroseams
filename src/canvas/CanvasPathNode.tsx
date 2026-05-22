@@ -104,9 +104,10 @@ interface CanvasPathNodeProps {
   isSelected: boolean
   onSelect: () => void
   onGuidesChange: (guides: SnapGuide[]) => void
+  nodeRef?: React.RefObject<Konva.Node>
 }
 
-export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange }: CanvasPathNodeProps): React.ReactElement {
+export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasPathNodeProps): React.ReactElement {
   const pathRef = useRef<Konva.Path>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
 
@@ -114,6 +115,11 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const anchorId = useCanvasStore((s) => s.anchorId)
+  const setAnchor = useCanvasStore((s) => s.setAnchor)
+
+  const isInMultiSelectMode = selectedIds.length > 1
+  const isAnchor = anchorId === obj.id
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const { computeSnap } = useSnapGuides()
 
@@ -132,11 +138,23 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     }
   }, [])
 
-  // Wire transformer — path gets a selection-only transformer (no resize anchors)
+  // Sync nodeRef so CarouselStage group transformer can attach to this Konva node
+  useEffect(() => {
+    if (nodeRef) {
+      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = pathRef.current
+    }
+  })
+
+  // Wire transformer — path gets a selection-only transformer (no resize anchors); suppress in multi-select mode
   useEffect(() => {
     const tr = transformerRef.current
     const node = pathRef.current
     if (!tr || !node) return
+    if (isInMultiSelectMode) {
+      tr.nodes([])
+      tr.getLayer()?.draw()
+      return
+    }
     if (isSelected && !obj.pathEditMode && !obj.locked) {
       tr.nodes([node])
       tr.enabledAnchors([])
@@ -146,11 +164,16 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       tr.nodes([])
       tr.getLayer()?.draw()
     }
-  }, [isSelected, obj.pathEditMode, obj.locked])
+  }, [isSelected, isInMultiSelectMode, obj.pathEditMode, obj.locked])
 
   function handleClick(e: Konva.KonvaEventObject<MouseEvent>): void {
-    if (e.evt.shiftKey) addToSelection(obj.id)
-    else onSelect()
+    if (e.evt.shiftKey) {
+      addToSelection(obj.id)
+    } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
+      setAnchor(anchorId === obj.id ? null : obj.id)
+    } else {
+      onSelect()
+    }
   }
 
   function handleDblClick(): void {
@@ -282,7 +305,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   // ---------------------------------------------------------------------------
 
   const pathData = anchorsToPathData(obj.anchors, obj.closed)
-  const isInMultiSelect = selectedIds.includes(obj.id) && !isSelected
+  const isInMultiSelect = isInMultiSelectMode && selectedIds.includes(obj.id)
 
   if (!obj.pathEditMode) {
     return (
@@ -291,8 +314,8 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
           <KonvaPath
             data={pathData}
             fill="transparent"
-            stroke="#0096ff"
-            strokeWidth={1}
+            stroke={isAnchor ? '#f5a623' : '#0096ff'}
+            strokeWidth={isAnchor ? 2 : 1}
             strokeScaleEnabled={false}
             perfectDrawEnabled={false}
             listening={false}
@@ -307,7 +330,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
           strokeScaleEnabled={false}
           opacity={obj.opacity}
           perfectDrawEnabled={false}
-          draggable={!obj.locked}
+          draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
           onTap={onSelect}
           onDblClick={handleDblClick}

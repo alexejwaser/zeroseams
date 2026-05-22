@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { Stage, Layer, Rect as KonvaRect, Line as KonvaLine, Circle as KonvaCircle, Path as KonvaPath, Ellipse as KonvaEllipse } from 'react-konva'
+import { Stage, Layer, Rect as KonvaRect, Line as KonvaLine, Circle as KonvaCircle, Path as KonvaPath, Ellipse as KonvaEllipse, Transformer } from 'react-konva'
 import type Konva from 'konva'
 import type { ImageObject, TextObject, ShapeObject, PathObject, AnchorPoint, CanvasObject } from '@/types/canvas'
 import type { ShapeKind } from '@/types/canvas'
@@ -33,8 +33,10 @@ export function CarouselStage(): React.ReactElement {
   const objects = useCanvasStore((s) => s.objects)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const selectedId = useCanvasStore((s) => s.selectedId)
+  const selectedIds = useCanvasStore((s) => s.selectedIds)
   const setSelected = useCanvasStore((s) => s.setSelected)
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
+  const commitMultipleUpdates = useCanvasStore((s) => s.commitMultipleUpdates)
   const frameCount = useCanvasStore((s) => s.frameCount)
   const frameWidth = useCanvasStore((s) => s.frameWidth)
   const frameHeight = useCanvasStore((s) => s.frameHeight)
@@ -60,6 +62,20 @@ export function CarouselStage(): React.ReactElement {
   const panY = useViewportStore((s) => s.panY)
   const setZoom = useViewportStore((s) => s.setZoom)
   const setPan = useViewportStore((s) => s.setPan)
+
+  // --- Group transformer + marquee ---
+  const groupTransformerRef = useRef<Konva.Transformer>(null)
+  const nodeRefMapRef = useRef<Map<string, React.RefObject<Konva.Node>>>(new Map())
+  const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  const marqueeStartRef = useRef<{ x: number; y: number } | null>(null)
+  const marqueeCurrentRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const isMarqueeActiveRef = useRef(false)
+
+  function getOrCreateNodeRef(id: string): React.RefObject<Konva.Node> {
+    const map = nodeRefMapRef.current
+    if (!map.has(id)) map.set(id, React.createRef<Konva.Node>())
+    return map.get(id)!
+  }
 
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([])
   const [previewShape, setPreviewShape] = useState<{
@@ -230,6 +246,138 @@ export function CarouselStage(): React.ReactElement {
     clearMaskDrawMode()
   }
 
+  // --- Group transformer wiring ---
+  useEffect(() => {
+    const tr = groupTransformerRef.current
+    if (!tr) return
+    if (selectedIds.length > 1) {
+      const nodes: Konva.Node[] = []
+      for (const id of selectedIds) {
+        const node = nodeRefMapRef.current.get(id)?.current
+        if (node) nodes.push(node)
+      }
+      tr.nodes(nodes)
+    } else {
+      tr.nodes([])
+    }
+    tr.getLayer()?.batchDraw()
+  }, [selectedIds])
+
+  // Clean up dead node refs when objects are removed
+  useEffect(() => {
+    const currentIds = new Set(objectOrder)
+    for (const id of nodeRefMapRef.current.keys()) {
+      if (!currentIds.has(id)) nodeRefMapRef.current.delete(id)
+    }
+  }, [objectOrder])
+
+  function getObjectBBoxForMarquee(obj: CanvasObject): { x: number; y: number; width: number; height: number } {
+    if (obj.type === 'image') {
+      const img = obj as ImageObject
+      return { x: img.frameX, y: img.frameY, width: img.frameWidth, height: img.frameHeight }
+    }
+    if (obj.type === 'path') {
+      return computePathBBox((obj as PathObject).anchors)
+    }
+    return { x: obj.x, y: obj.y, width: obj.width, height: obj.height }
+  }
+
+  function rectsOverlap(
+    a: { x: number; y: number; width: number; height: number },
+    b: { x: number; y: number; width: number; height: number },
+  ): boolean {
+    return !(a.x + a.width < b.x || b.x + b.width < a.x || a.y + a.height < b.y || b.y + b.height < a.y)
+  }
+
+  function handleGroupTransformEnd(): void {
+    const tr = groupTransformerRef.current
+    if (!tr) return
+    const patches: Record<string, Partial<CanvasObject>> = {}
+    const currentSelectedIds = useCanvasStore.getState().selectedIds
+    const currentObjects = useCanvasStore.getState().objects
+    for (const id of currentSelectedIds) {
+      const ref = nodeRefMapRef.current.get(id)
+      const node = ref?.current
+      if (!node) continue
+      const obj = currentObjects[id]
+      if (!obj) continue
+      const newX = node.x()
+      const newY = node.y()
+      const newScaleX = node.scaleX()
+      const newScaleY = node.scaleY()
+      const newRotation = node.rotation()
+      if (obj.type === 'image') {
+        const img = obj as ImageObject
+        const newFW = img.frameWidth * newScaleX
+        const newFH = img.frameHeight * newScaleY
+        node.scaleX(1); node.scaleY(1)
+        patches[id] = {
+          frameX: newX, frameY: newY, x: newX, y: newY,
+          frameWidth: newFW, frameHeight: newFH, width: newFW, height: newFH,
+          rotation: newRotation,
+          contentOffsetX: img.contentOffsetX + (img.frameX - newX),
+          contentOffsetY: img.contentOffsetY + (img.frameY - newY),
+        }
+      } else if (obj.type === 'path') {
+        const p = obj as PathObject
+        const dx = node.x(); const dy = node.y()
+        node.x(0); node.y(0)
+        node.scaleX(1); node.scaleY(1)
+        const newAnchors = p.anchors.map((a) => ({ ...a, x: a.x + dx, y: a.y + dy }))
+        const bbox = computePathBBox(newAnchors)
+        patches[id] = { anchors: newAnchors, x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height, rotation: newRotation }
+      } else if (obj.type === 'text') {
+        const absWidth = obj.width * newScaleX
+        const absHeight = obj.height * newScaleY
+        node.scaleX(1); node.scaleY(1)
+        patches[id] = { x: newX, y: newY, width: absWidth, height: absHeight, rotation: newRotation, scaleX: 1, scaleY: 1 }
+      } else if (obj.type === 'shape') {
+        const s = obj as ShapeObject
+        if (s.kind === 'ellipse') {
+          const el = node as Konva.Ellipse
+          const w = el.radiusX() * 2 * newScaleX
+          const h = el.radiusY() * 2 * newScaleY
+          node.scaleX(1); node.scaleY(1)
+          patches[id] = { x: newX - w / 2, y: newY - h / 2, width: w, height: h, rotation: newRotation, scaleX: 1, scaleY: 1 }
+        } else {
+          const w = obj.width * newScaleX
+          const h = obj.height * newScaleY
+          node.scaleX(1); node.scaleY(1)
+          patches[id] = { x: newX, y: newY, width: w, height: h, rotation: newRotation, scaleX: 1, scaleY: 1 }
+        }
+      }
+    }
+    commitMultipleUpdates(patches)
+    setActiveGuides([])
+  }
+
+  function handleGroupDragEnd(): void {
+    const currentSelectedIds = useCanvasStore.getState().selectedIds
+    const currentObjects = useCanvasStore.getState().objects
+    const patches: Record<string, Partial<CanvasObject>> = {}
+    for (const id of currentSelectedIds) {
+      const ref = nodeRefMapRef.current.get(id)
+      const node = ref?.current
+      if (!node) continue
+      const obj = currentObjects[id]
+      if (!obj) continue
+      if (obj.type === 'image') {
+        patches[id] = { frameX: node.x(), frameY: node.y(), x: node.x(), y: node.y() }
+      } else if (obj.type === 'path') {
+        const p = obj as PathObject
+        const dx = node.x(); const dy = node.y()
+        node.x(0); node.y(0)
+        const newAnchors = p.anchors.map((a) => ({ ...a, x: a.x + dx, y: a.y + dy }))
+        const bbox = computePathBBox(newAnchors)
+        patches[id] = { anchors: newAnchors, x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height }
+      } else {
+        patches[id] = { x: node.x(), y: node.y() }
+      }
+    }
+    commitMultipleUpdates(patches)
+    setActiveGuides([])
+  }
+
   // --- Wheel: non-passive native listener to prevent browser scroll during zoom ---
   useEffect(() => {
     const el = containerRef.current
@@ -387,17 +535,44 @@ export function CarouselStage(): React.ReactElement {
             drawStartRef.current = { x: canvasX, y: canvasY, id: newId }
             setPreviewShape({ kind: activeShapeKind, x: canvasX, y: canvasY, width: 1, height: 1 })
           } else {
-            setSelected(null)
-            setSelectedIds([])
-            clearContentEditMode()
-            clearPathEditMode()
-            clearMaskEditMode()
-            setActiveGuides([])
+            // Start marquee selection — defer clearing selection to mouseup
+            const stage = e.target.getStage()
+            if (stage) {
+              const pos = stage.getRelativePointerPosition()
+              if (pos) {
+                marqueeStartRef.current = { x: pos.x, y: pos.y }
+                marqueeCurrentRef.current = { x: pos.x, y: pos.y, width: 0, height: 0 }
+                isMarqueeActiveRef.current = true
+                setMarquee({ x: pos.x, y: pos.y, width: 0, height: 0 })
+                clearContentEditMode()
+                clearPathEditMode()
+                clearMaskEditMode()
+                setActiveGuides([])
+              }
+            }
           }
         }}
         onMouseMove={(e) => {
           // Block Stage events when panning
           if (isPanningRef.current) return
+
+          // --- Marquee selection drag ---
+          if (isMarqueeActiveRef.current && marqueeStartRef.current) {
+            const stage = e.target.getStage()
+            if (stage) {
+              const pos = stage.getRelativePointerPosition()
+              if (pos) {
+                const start = marqueeStartRef.current
+                const x = Math.min(start.x, pos.x)
+                const y = Math.min(start.y, pos.y)
+                const width = Math.abs(pos.x - start.x)
+                const height = Math.abs(pos.y - start.y)
+                marqueeCurrentRef.current = { x, y, width, height }
+                setMarquee({ x, y, width, height })
+              }
+            }
+            return
+          }
 
           // --- Mask draw mode cursor tracking ---
           if (maskDrawMode !== null) {
@@ -459,9 +634,40 @@ export function CarouselStage(): React.ReactElement {
             setPreviewShape((prev) => prev === null ? null : { kind: prev.kind, x, y, width, height })
           }
         }}
-        onMouseUp={() => {
+        onMouseUp={(e) => {
           // Block Stage events when panning
           if (isPanningRef.current) return
+
+          // --- Marquee selection finalize ---
+          if (isMarqueeActiveRef.current) {
+            isMarqueeActiveRef.current = false
+            const rect = marqueeCurrentRef.current
+            marqueeStartRef.current = null
+            marqueeCurrentRef.current = null
+            setMarquee(null)
+            if (rect !== null && (rect.width >= 5 || rect.height >= 5)) {
+              const overlapping: string[] = []
+              const currentObjects = useCanvasStore.getState().objects
+              for (const id of objectOrder) {
+                const obj = currentObjects[id]
+                if (!obj || !obj.visible || obj.locked) continue
+                const bbox = getObjectBBoxForMarquee(obj)
+                if (rectsOverlap(rect, bbox)) overlapping.push(id)
+              }
+              if (e.evt.shiftKey) {
+                const current = useCanvasStore.getState().selectedIds
+                const merged = Array.from(new Set([...current, ...overlapping]))
+                setSelectedIds(merged)
+              } else {
+                setSelectedIds(overlapping)
+              }
+            } else {
+              // Misclick — clear selection
+              setSelected(null)
+              setSelectedIds([])
+            }
+            return
+          }
 
           // --- Mask draw mode: place shape or anchor ---
           if (maskDrawMode !== null) {
@@ -639,6 +845,7 @@ export function CarouselStage(): React.ReactElement {
                   isSelected={selectedId === id}
                   onSelect={() => setSelected(id)}
                   onGuidesChange={setActiveGuides}
+                  nodeRef={getOrCreateNodeRef(id)}
                 />
               )
             }
@@ -650,6 +857,7 @@ export function CarouselStage(): React.ReactElement {
                   isSelected={selectedId === id}
                   onSelect={() => setSelected(id)}
                   onGuidesChange={setActiveGuides}
+                  nodeRef={getOrCreateNodeRef(id)}
                 />
               )
             }
@@ -661,6 +869,7 @@ export function CarouselStage(): React.ReactElement {
                   isSelected={selectedId === id}
                   onSelect={() => { setSelected(id) }}
                   onGuidesChange={setActiveGuides}
+                  nodeRef={getOrCreateNodeRef(id)}
                 />
               )
             }
@@ -672,11 +881,43 @@ export function CarouselStage(): React.ReactElement {
                   isSelected={selectedId === id}
                   onSelect={() => setSelected(id)}
                   onGuidesChange={setActiveGuides}
+                  nodeRef={getOrCreateNodeRef(id)}
                 />
               )
             }
             return null // other types TBD
           })}
+
+          {/* Group transformer — active when 2+ objects are selected */}
+          <Transformer
+            ref={groupTransformerRef}
+            keepRatio={false}
+            borderStroke="#0096ff"
+            borderStrokeWidth={1.5}
+            anchorFill="#fff"
+            anchorStroke="#0096ff"
+            anchorSize={8}
+            onTransformEnd={handleGroupTransformEnd}
+            onDragEnd={handleGroupDragEnd}
+            boundBoxFunc={(oldBox, newBox) => (newBox.width < 5 || newBox.height < 5 ? oldBox : newBox)}
+          />
+
+          {/* Marquee selection rectangle */}
+          {marquee !== null && (
+            <KonvaRect
+              x={marquee.x}
+              y={marquee.y}
+              width={marquee.width}
+              height={marquee.height}
+              fill="rgba(0,150,255,0.08)"
+              stroke="#0096ff"
+              strokeWidth={1}
+              strokeScaleEnabled={false}
+              dash={[6, 4]}
+              listening={false}
+              perfectDrawEnabled={false}
+            />
+          )}
 
           {/* Shape draw preview */}
           {previewShape !== null && (previewShape.kind === 'line' || previewShape.kind === 'arrow') && (

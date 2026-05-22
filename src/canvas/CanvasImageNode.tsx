@@ -13,9 +13,10 @@ interface CanvasImageNodeProps {
   isSelected: boolean
   onSelect: () => void
   onGuidesChange: (guides: SnapGuide[]) => void
+  nodeRef?: React.RefObject<Konva.Node>
 }
 
-export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: CanvasImageNodeProps): React.ReactElement | null {
+export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasImageNodeProps): React.ReactElement | null {
   const [loadedImage] = useImage(obj.src)
 
   // Hold the last successfully loaded HTMLImageElement so the component never
@@ -53,9 +54,14 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
   const maskDrawMode = useCanvasStore((s) => s.maskDrawMode)
   const isDrawTarget = maskDrawMode?.id === obj.id
   const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const anchorId = useCanvasStore((s) => s.anchorId)
+  const setAnchor = useCanvasStore((s) => s.setAnchor)
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const resizeMode = useCanvasStore((s) => s.resizeMode)
+
+  const isInMultiSelectMode = selectedIds.length > 1
+  const isAnchor = anchorId === obj.id
   const { computeSnap, computeSnapResize } = useSnapGuides()
 
   // Memoized so React-Konva sees the same object reference between renders while
@@ -127,11 +133,24 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
   }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight, obj.src])
 
   // Re-run when image loads so transformer can attach on first select.
+  // Sync nodeRef so CarouselStage group transformer can attach to frameRectRef
+  useEffect(() => {
+    if (nodeRef) {
+      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = frameRectRef.current
+    }
+  })
+
   useEffect(() => {
     const tr = transformerRef.current
     const frameRect = frameRectRef.current
     const img = imageRef.current
     if (!tr || !frameRect || !img) return
+
+    if (isInMultiSelectMode && !obj.contentEditMode) {
+      tr.nodes([])
+      tr.getLayer()?.draw()
+      return
+    }
 
     if (isSelected && !obj.maskEditMode && !isDrawTarget) {
       if (obj.contentEditMode) {
@@ -155,7 +174,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
       tr.nodes([])
       tr.getLayer()?.draw()
     }
-  }, [isSelected, obj.contentEditMode, obj.maskEditMode, obj.locked, loadedImage, isDrawTarget, maskDrawMode])
+  }, [isSelected, isInMultiSelectMode, obj.contentEditMode, obj.maskEditMode, obj.locked, loadedImage, isDrawTarget, maskDrawMode])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -437,8 +456,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
 
   if (!image) return null
 
-  // Show multi-select highlight outline when in selectedIds but not the primary selected
-  const isInMultiSelect = selectedIds.includes(obj.id) && !isSelected
+  const isInMultiSelect = isInMultiSelectMode && selectedIds.includes(obj.id)
 
   return (
     <>
@@ -576,17 +594,19 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange }: C
         height={obj.frameHeight}
         rotation={obj.rotation}
         fill="transparent"
-        stroke="#0096ff"
-        strokeWidth={1}
+        stroke={isAnchor && isInMultiSelect ? '#f5a623' : '#0096ff'}
+        strokeWidth={isAnchor && isInMultiSelect ? 2 : 1}
         strokeEnabled={obj.contentEditMode || isInMultiSelect}
         strokeScaleEnabled={false}
         perfectDrawEnabled={false}
-        draggable={!obj.locked && !obj.contentEditMode && !obj.maskEditMode && !isDrawTarget}
+        draggable={!obj.locked && !obj.contentEditMode && !obj.maskEditMode && !isDrawTarget && !isInMultiSelectMode}
         listening={!obj.contentEditMode && !obj.maskEditMode && !isDrawTarget}
         onClick={(e) => {
           if (!obj.contentEditMode && !obj.maskEditMode && !isDrawTarget) {
             if (e.evt.shiftKey) {
               addToSelection(obj.id)
+            } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
+              setAnchor(anchorId === obj.id ? null : obj.id)
             } else {
               onSelect()
             }

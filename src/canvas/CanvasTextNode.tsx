@@ -14,6 +14,7 @@ interface CanvasTextNodeProps {
   isSelected: boolean
   onSelect: () => void
   onGuidesChange: (guides: SnapGuide[]) => void
+  nodeRef?: React.RefObject<Konva.Node>
 }
 
 /**
@@ -58,7 +59,7 @@ function charIndexToDomOffset(div: HTMLDivElement, charIndex: number): { node: N
   return { node: div, offset: div.childNodes.length }
 }
 
-export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: CanvasTextNodeProps): React.ReactElement {
+export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasTextNodeProps): React.ReactElement {
   const textRef = useRef<Konva.Text>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const editDivRef = useRef<HTMLDivElement | null>(null)
@@ -67,6 +68,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const anchorId = useCanvasStore((s) => s.anchorId)
+  const setAnchor = useCanvasStore((s) => s.setAnchor)
+
+  const isInMultiSelectMode = selectedIds.length > 1
+  const isAnchor = anchorId === obj.id
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const setTextEditing = useCanvasStore((s) => s.setTextEditing)
@@ -86,11 +92,23 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
   const dragStartYRef = useRef(0)
   const pendingDuplicateRef = useRef(false)
 
-  // Wire transformer when selected
+  // Sync nodeRef so CarouselStage group transformer can attach to this Konva node
+  useEffect(() => {
+    if (nodeRef) {
+      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = textRef.current
+    }
+  })
+
+  // Wire transformer when selected; suppress when group transformer is active
   useEffect(() => {
     const tr = transformerRef.current
     const node = textRef.current
     if (!tr || !node) return
+    if (isInMultiSelectMode) {
+      tr.nodes([])
+      tr.getLayer()?.draw()
+      return
+    }
     if (isSelected) {
       tr.nodes([node])
       if (obj.locked) {
@@ -111,7 +129,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
       // cleared immediately — before the newly selected transformer paints.
       tr.getLayer()?.draw()
     }
-  }, [isSelected, obj.locked])
+  }, [isSelected, isInMultiSelectMode, obj.locked])
 
   useEffect(() => {
     const onDown = (e: KeyboardEvent): void => { if (e.altKey) altHeldRef.current = true }
@@ -488,8 +506,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
     document.addEventListener('keydown', handleDocKeyDown)
   }
 
-  // Show multi-select outline when in selectedIds but not the primary selected
-  const isInMultiSelect = selectedIds.includes(obj.id) && !isSelected
+  const isInMultiSelect = isInMultiSelectMode && selectedIds.includes(obj.id)
 
   return (
     <>
@@ -502,8 +519,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
           height={obj.height}
           rotation={obj.rotation}
           fill="transparent"
-          stroke="#0096ff"
-          strokeWidth={1}
+          stroke={isAnchor ? '#f5a623' : '#0096ff'}
+          strokeWidth={isAnchor ? 2 : 1}
           strokeScaleEnabled={false}
           perfectDrawEnabled={false}
           listening={false}
@@ -529,10 +546,12 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange }: Ca
         letterSpacing={obj.letterSpacing}
         lineHeight={obj.lineHeight}
         wrap="word"
-        draggable={!obj.locked}
+        draggable={!obj.locked && !isInMultiSelectMode}
         onClick={(e) => {
           if (e.evt.shiftKey) {
             addToSelection(obj.id)
+          } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
+            setAnchor(anchorId === obj.id ? null : obj.id)
           } else {
             onSelect()
           }

@@ -53,6 +53,7 @@ interface CanvasState {
   objectOrder: string[]
   selectedId: string | null
   selectedIds: string[]
+  anchorId: string | null
   frameCount: number
   platform: Platform
   ratio: FrameRatio
@@ -88,6 +89,9 @@ interface CanvasState {
   setSelected: (id: string | null) => void
   addToSelection: (id: string) => void
   setSelectedIds: (ids: string[]) => void
+  setAnchor: (id: string | null) => void
+  commitMultipleUpdates: (patches: Record<string, Partial<CanvasObject>>) => void
+  removeMultipleObjects: (ids: string[]) => void
   setFrameCount: (n: number) => void
   setActiveTool: (tool: 'select' | 'text' | 'shape' | 'pen') => void
   reorderObjects: (fromId: string, toId: string, side: 'before' | 'after') => void
@@ -172,6 +176,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     objectOrder: [],
     selectedId: null,
     selectedIds: [],
+    anchorId: null,
     frameCount: 2,
     platform: 'instagram',
     ratio: 'square',
@@ -242,6 +247,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           objectOrder: state.objectOrder.filter((oid) => oid !== id),
           selectedId: state.selectedId === id ? null : state.selectedId,
           selectedIds: state.selectedIds.filter((sid) => sid !== id),
+          anchorId: state.anchorId === id ? null : state.anchorId,
         }
       }),
 
@@ -249,6 +255,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
       set({
         selectedId: id,
         selectedIds: id !== null ? [id] : [],
+        anchorId: null,
       }),
 
     addToSelection: (id) =>
@@ -259,6 +266,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           return {
             selectedIds: newIds,
             selectedId: newIds.length > 0 ? newIds[newIds.length - 1] : null,
+            anchorId: state.anchorId === id ? null : state.anchorId,
           }
         }
         return {
@@ -272,6 +280,43 @@ export const useCanvasStore = create<CanvasState>((set) => {
       set({
         selectedIds: ids,
         selectedId: ids.length > 0 ? ids[ids.length - 1] : null,
+        anchorId: null,
+      }),
+
+    setAnchor: (id) =>
+      set((state) => {
+        if (id === null) return { anchorId: null }
+        if (!state.selectedIds.includes(id)) return state
+        return { anchorId: id }
+      }),
+
+    commitMultipleUpdates: (patches) =>
+      set((state) => {
+        const updatedObjects = { ...state.objects }
+        for (const [id, patch] of Object.entries(patches)) {
+          const existing = state.objects[id]
+          if (!existing) continue
+          updatedObjects[id] = { ...existing, ...patch } as CanvasObject
+        }
+        return { past: pushHistoryFrom(state), future: [], objects: updatedObjects }
+      }),
+
+    removeMultipleObjects: (ids) =>
+      set((state) => {
+        const idSet = new Set(ids)
+        const updatedObjects = { ...state.objects }
+        for (const id of ids) {
+          delete updatedObjects[id]
+        }
+        return {
+          past: pushHistoryFrom(state),
+          future: [],
+          objects: updatedObjects,
+          objectOrder: state.objectOrder.filter((oid) => !idSet.has(oid)),
+          selectedId: idSet.has(state.selectedId ?? '') ? null : state.selectedId,
+          selectedIds: state.selectedIds.filter((sid) => !idSet.has(sid)),
+          anchorId: idSet.has(state.anchorId ?? '') ? null : state.anchorId,
+        }
       }),
 
     setFrameCount: (n) =>
@@ -340,15 +385,40 @@ export const useCanvasStore = create<CanvasState>((set) => {
 
         if (bboxes.length < 2) return state
 
-        const minX = Math.min(...bboxes.map((b) => b.x))
-        const minY = Math.min(...bboxes.map((b) => b.y))
-        const maxX = Math.max(...bboxes.map((b) => b.x + b.width))
-        const maxY = Math.max(...bboxes.map((b) => b.y + b.height))
-        const centerX = (minX + maxX) / 2
-        const centerY = (minY + maxY) / 2
+        // When anchor object is set, align TO its bbox; otherwise use collective bbox
+        let refMinX: number, refMinY: number, refMaxX: number, refMaxY: number, refCenterX: number, refCenterY: number
+        if (state.anchorId && state.selectedIds.includes(state.anchorId)) {
+          const anchorObj = state.objects[state.anchorId]
+          if (anchorObj) {
+            const ab = getObjectBBox(anchorObj)
+            refMinX = ab.x
+            refMinY = ab.y
+            refMaxX = ab.x + ab.width
+            refMaxY = ab.y + ab.height
+            refCenterX = ab.x + ab.width / 2
+            refCenterY = ab.y + ab.height / 2
+          } else {
+            refMinX = Math.min(...bboxes.map((b) => b.x))
+            refMinY = Math.min(...bboxes.map((b) => b.y))
+            refMaxX = Math.max(...bboxes.map((b) => b.x + b.width))
+            refMaxY = Math.max(...bboxes.map((b) => b.y + b.height))
+            refCenterX = (refMinX + refMaxX) / 2
+            refCenterY = (refMinY + refMaxY) / 2
+          }
+        } else {
+          refMinX = Math.min(...bboxes.map((b) => b.x))
+          refMinY = Math.min(...bboxes.map((b) => b.y))
+          refMaxX = Math.max(...bboxes.map((b) => b.x + b.width))
+          refMaxY = Math.max(...bboxes.map((b) => b.y + b.height))
+          refCenterX = (refMinX + refMaxX) / 2
+          refCenterY = (refMinY + refMaxY) / 2
+        }
 
         const updatedObjects = { ...state.objects }
         for (const id of ids) {
+          // Anchor object does not move when anchoring to it
+          if (state.anchorId && id === state.anchorId) continue
+
           const obj = state.objects[id]
           if (!obj) continue
           const bbox = getObjectBBox(obj)
@@ -357,22 +427,22 @@ export const useCanvasStore = create<CanvasState>((set) => {
           let dy = 0
           switch (anchor) {
             case 'left':
-              dx = minX - bbox.x
+              dx = refMinX - bbox.x
               break
             case 'right':
-              dx = maxX - (bbox.x + bbox.width)
+              dx = refMaxX - (bbox.x + bbox.width)
               break
             case 'top':
-              dy = minY - bbox.y
+              dy = refMinY - bbox.y
               break
             case 'bottom':
-              dy = maxY - (bbox.y + bbox.height)
+              dy = refMaxY - (bbox.y + bbox.height)
               break
             case 'centerH':
-              dx = centerX - (bbox.x + bbox.width / 2)
+              dx = refCenterX - (bbox.x + bbox.width / 2)
               break
             case 'centerV':
-              dy = centerY - (bbox.y + bbox.height / 2)
+              dy = refCenterY - (bbox.y + bbox.height / 2)
               break
           }
 
@@ -714,6 +784,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
           backgroundColor: project.backgroundColor,
           selectedId: null,
           selectedIds: [],
+          anchorId: null,
           contextMenu: null,
           activeTool: 'select',
           textEditingId: null,
@@ -732,6 +803,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
         return {
           selectedIds: ids,
           selectedId: ids.length > 0 ? ids[ids.length - 1] : null,
+          anchorId: null,
         }
       }),
 

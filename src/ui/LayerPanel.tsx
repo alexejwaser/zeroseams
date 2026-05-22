@@ -18,8 +18,10 @@ export function LayerPanel(): React.ReactElement {
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const selectedId = useCanvasStore((s) => s.selectedId)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
+  const anchorId = useCanvasStore((s) => s.anchorId)
   const setSelected = useCanvasStore((s) => s.setSelected)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
+  const setAnchor = useCanvasStore((s) => s.setAnchor)
   const updateObject = useCanvasStore((s) => s.updateObject)
   const reorderObjects = useCanvasStore((s) => s.reorderObjects)
   const toggleLock = useCanvasStore((s) => s.toggleLock)
@@ -112,8 +114,10 @@ export function LayerPanel(): React.ReactElement {
           if (!obj) return null
           const originalIndex = objectOrder.indexOf(id)
           const isSelected = selectedIds.includes(id) || selectedId === id
+          const isAnchor = anchorId === id
           const isDropBefore = dropPos?.id === id && dropPos.side === 'before'
           const isDropAfter = dropPos?.id === id && dropPos.side === 'after'
+          const canBeAnchor = selectedIds.length > 1 && selectedIds.includes(id)
 
           return (
             <div
@@ -153,7 +157,7 @@ export function LayerPanel(): React.ReactElement {
                 cursor: 'pointer',
                 userSelect: 'none',
                 gap: 6,
-                borderLeft: isSelected ? '2px solid #0af' : '2px solid transparent',
+                borderLeft: isAnchor ? '3px solid #f5a623' : isSelected ? '2px solid #0af' : '2px solid transparent',
                 borderTop: isDropBefore ? '2px solid #0af' : '2px solid transparent',
                 borderBottom: isDropAfter ? '2px solid #0af' : '2px solid transparent',
                 boxSizing: 'border-box',
@@ -222,6 +226,30 @@ export function LayerPanel(): React.ReactElement {
               >
                 {getDisplayName(id, originalIndex)}
               </span>
+
+              {/* Anchor button — visible only in multi-select mode */}
+              {canBeAnchor && (
+                <button
+                  draggable={false}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setAnchor(isAnchor ? null : id)
+                  }}
+                  title={isAnchor ? 'Clear reference object' : 'Set as reference object'}
+                  style={{
+                    flexShrink: 0,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '0 2px',
+                    fontSize: 12,
+                    lineHeight: '1',
+                    color: isAnchor ? '#f5a623' : '#666',
+                  }}
+                >
+                  ★
+                </button>
+              )}
 
               {/* Lock toggle */}
               <button
