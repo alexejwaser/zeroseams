@@ -25,6 +25,7 @@ interface Window {
       filePath: string,
       json: string,
     ): Promise<{ success: boolean; error?: string }>
+    saveProjectCopy(json: string): Promise<{ success: boolean; filePath?: string; error?: string }>
     getSystemFonts(): Promise<string[]>
     getExternalEditor(): Promise<ExternalEditor | null>
     setExternalEditor(): Promise<ExternalEditor | null>

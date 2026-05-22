@@ -110,6 +110,7 @@ export function Toolbar(): React.ReactElement {
   const [recentOpen, setRecentOpen] = useState(false)
   const [recentFiles, setRecentFiles] = useState<Array<{ name: string; path: string; modifiedAt: string }>>([])
   const [loadingProject, setLoadingProject] = useState(false)
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false)
 
   // Local state for custom dimension inputs
   const [customW, setCustomW] = useState(frameWidth)
@@ -154,6 +155,17 @@ export function Toolbar(): React.ReactElement {
     document.addEventListener('mousedown', handleMouseDown)
     return () => { document.removeEventListener('mousedown', handleMouseDown) }
   }, [recentOpen])
+
+  // Dismiss save menu on outside click
+  useEffect(() => {
+    if (!saveMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-save-menu]')) setSaveMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [saveMenuOpen])
 
   async function handleExportAction(): Promise<void> {
     const stage = getStageInstance()
@@ -236,6 +248,27 @@ export function Toolbar(): React.ReactElement {
     if (e.key === 'Enter') {
       commitCustomDimensions()
     }
+  }
+
+  function buildProjectJson(): string {
+    const state = useCanvasStore.getState()
+    const saveStore = useSaveStatusStore.getState()
+    const project: CarouselProject = {
+      id: saveStore.projectId,
+      name: saveStore.projectName,
+      platform: state.platform,
+      ratio: state.ratio,
+      dimensions: { width: state.frameWidth, height: state.frameHeight },
+      frameCount: state.frameCount,
+      frames: state.frames,
+      backgroundColor: state.backgroundColor,
+      objects: state.objects,
+      objectOrder: state.objectOrder,
+      createdAt: saveStore.createdAt,
+      updatedAt: new Date().toISOString(),
+      version: 1,
+    }
+    return JSON.stringify(project)
   }
 
   const undoDisabled = past.length === 0
@@ -354,7 +387,7 @@ export function Toolbar(): React.ReactElement {
               position: 'absolute',
               top: '100%',
               left: 0,
-              zIndex: 1000,
+              zIndex: 1001,
               marginTop: 6,
               background: '#1e1e1e',
               border: '1px solid #3a3a3a',
@@ -387,6 +420,113 @@ export function Toolbar(): React.ReactElement {
                 </div>
               ))
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Save split-button */}
+      <div data-save-menu style={{ position: 'relative', display: 'flex', marginLeft: 6, flex: '0 0 auto' }}>
+        <button
+          onClick={() => {
+            const saveStore = useSaveStatusStore.getState()
+            const json = buildProjectJson()
+            if (saveStore.currentFilePath) {
+              window.electronAPI.saveProject(saveStore.currentFilePath, json)
+                .catch((err: unknown) => console.error('[ZeroSeams] Save failed:', err))
+            } else {
+              window.electronAPI.saveProjectAs(json)
+                .then((result: { success: boolean; filePath?: string; error?: string }) => {
+                  if (result.success && result.filePath) {
+                    useSaveStatusStore.getState().setCurrentFilePath(result.filePath)
+                  }
+                })
+                .catch((err: unknown) => console.error('[ZeroSeams] Save failed:', err))
+            }
+          }}
+          style={{
+            padding: '4px 10px',
+            height: 30,
+            background: '#333',
+            color: '#fff',
+            border: 'none',
+            borderRight: '1px solid #555',
+            borderRadius: '4px 0 0 4px',
+            cursor: 'pointer',
+            fontSize: 13,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Save
+        </button>
+        <button
+          onClick={() => setSaveMenuOpen(v => !v)}
+          style={{
+            padding: '4px 6px',
+            height: 30,
+            background: saveMenuOpen ? '#555' : '#333',
+            color: '#aaa',
+            border: 'none',
+            borderRadius: '0 4px 4px 0',
+            cursor: 'pointer',
+            fontSize: 11,
+          }}
+          title="More save options"
+        >
+          ▾
+        </button>
+        {saveMenuOpen && (
+          <div style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            marginTop: 6,
+            background: '#1e1e1e',
+            border: '1px solid #3a3a3a',
+            borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            zIndex: 1000,
+            minWidth: 160,
+            padding: '4px 0',
+          }}>
+            <button
+              onClick={() => {
+                setSaveMenuOpen(false)
+                const json = buildProjectJson()
+                window.electronAPI.saveProjectAs(json)
+                  .then((result: { success: boolean; filePath?: string; error?: string }) => {
+                    if (result.success && result.filePath) {
+                      useSaveStatusStore.getState().setCurrentFilePath(result.filePath)
+                    }
+                  })
+                  .catch((err: unknown) => console.error('[ZeroSeams] Save As failed:', err))
+              }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                background: 'none', border: 'none', color: '#e0e0e0',
+                fontSize: 13, padding: '7px 14px', cursor: 'pointer',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#2a2a2a')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+            >
+              Save As…
+            </button>
+            <button
+              onClick={() => {
+                setSaveMenuOpen(false)
+                const json = buildProjectJson()
+                window.electronAPI.saveProjectCopy(json)
+                  .catch((err: unknown) => console.error('[ZeroSeams] Save a Copy failed:', err))
+              }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                background: 'none', border: 'none', color: '#e0e0e0',
+                fontSize: 13, padding: '7px 14px', cursor: 'pointer',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#2a2a2a')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+            >
+              Save a Copy…
+            </button>
           </div>
         )}
       </div>
@@ -763,50 +903,6 @@ export function Toolbar(): React.ReactElement {
             </div>
           )}
         </div>
-
-        {/* Save As button */}
-        <button
-          onClick={() => {
-            const state = useCanvasStore.getState()
-            const saveStore = useSaveStatusStore.getState()
-            const project: CarouselProject = {
-              id: saveStore.projectId,
-              name: saveStore.projectName,
-              platform: state.platform,
-              ratio: state.ratio,
-              dimensions: { width: state.frameWidth, height: state.frameHeight },
-              frameCount: state.frameCount,
-              frames: state.frames,
-              backgroundColor: state.backgroundColor,
-              objects: state.objects,
-              objectOrder: state.objectOrder,
-              createdAt: saveStore.createdAt,
-              updatedAt: new Date().toISOString(),
-              version: 1,
-            }
-            window.electronAPI.saveProjectAs(JSON.stringify(project))
-              .then((result: { success: boolean; filePath?: string; error?: string }) => {
-                if (result.success && result.filePath) {
-                  saveStore.setCurrentFilePath(result.filePath)
-                }
-              })
-              .catch((err: unknown) => {
-                console.error('[ZeroSeams] Save As failed:', err)
-              })
-          }}
-          style={{
-            background: '#2a2a2a',
-            border: '1px solid #444',
-            borderRadius: 4,
-            color: '#ccc',
-            fontSize: 11,
-            padding: '3px 8px',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Save As…
-        </button>
 
         {/* Save status pill + current file name */}
         <div

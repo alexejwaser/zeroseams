@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('save-project-as', { json }),
   saveProject: (filePath: string, json: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('save-project', { filePath, json }),
+  saveProjectCopy: (json: string): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke('save-project-copy', { json }),
   getSystemFonts: (): Promise<string[]> =>
     ipcRenderer.invoke('get-system-fonts'),
   getExternalEditor: (): Promise<{ name: string; execPath: string } | null> =>

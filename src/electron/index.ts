@@ -132,6 +132,21 @@ ipcMain.handle(
   },
 )
 
+ipcMain.handle('save-project-copy', async (_e, { json }: { json: string }) => {
+  try {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: join(getZeroSeamsDir(), 'untitled copy.zeroseams'),
+      filters: [{ name: 'Zero Seams Project', extensions: ['zeroseams'] }],
+    })
+    if (canceled || !filePath) return { success: false }
+    await writeFile(filePath, json, 'utf-8')
+    return { success: true, filePath }
+  } catch (err) {
+    return { success: false, error: String(err) }
+  }
+})
+
 ipcMain.handle(
   'save-project',
   async (_event, { filePath, json }: { filePath: string; json: string }) => {
