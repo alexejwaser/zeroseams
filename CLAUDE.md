@@ -51,7 +51,7 @@ Two-layer model — never collapse:
 
 **Pen/Bezier tool (sprint 14)**: `PathObject` with `anchors: AnchorPoint[]`. `CanvasPathNode.tsx` renders SVG path from anchors. `anchorsToPathData()` exported from there for use in CarouselStage.
 
-**Snap**: `useSnapGuides.ts` — snaps to frame edges/centers and other objects' edges/centers. Threshold 8px. Rendered as Konva Lines (non-listening layer).
+**Snap**: `useSnapGuides.ts` — snaps to frame edges/centers and other objects' edges/centers. Threshold 8px. Rendered as Konva Lines (non-listening layer). Hook exposes `computeSnap`/`computeSnapResize` (single-object, exclude one ID) and `computeSnapGroup`/`computeSnapResizeGroup` (multi-select, exclude a set of IDs). CarouselStage calls the group variants during `handleGroupDragLive`, `boundBoxFunc`, and the manual `multiSelectDragStartRef` drag path.
 
 **Locking**: `locked: boolean` on every object. When locked: transformer shows no handles, drag disabled, double-click blocked.
 
@@ -81,6 +81,8 @@ Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when 
 23 (issue #6): File management save button — replaced the single "Save As…" button on the right with a split-button on the left toolbar (next to Open): "Save" primary (overwrites `currentFilePath` or opens Save As dialog on first save) + "▾" dropdown with "Save As…" (always prompts, updates `currentFilePath`) and "Save a Copy…" (always prompts, does NOT update `currentFilePath`); new `save-project-copy` IPC handler + `saveProjectCopy` in preload + type; autosave and ⌘S/⌘⇧S shortcuts unchanged
 
 24 (issue #4): Rework multi-object selection — group transformer: single Konva `<Transformer>` in `CarouselStage` wires to all selected nodes (`nodeRefMapRef` + `nodeRef` prop on all 4 node components); resize/rotate/drag apply to full group (one undo step via `commitMultipleUpdates`); marquee rubber-band selection on empty canvas drag (`isMarqueeActiveRef`, `marqueeCurrentRef`), Shift+drag extends selection; reference object (`anchorId` in store): click selected object → gold `#f5a623` border, Layer Panel `★` button, Properties Panel "Reference" dropdown — `alignObjects` aligns TO anchor bbox when set; individual transformers and `draggable` suppressed when `selectedIds.length > 1`; keyboard shortcuts extended: Delete/arrow nudge/Cmd+D all act on full `selectedIds[]` (single undo step each); new store actions: `commitMultipleUpdates`, `removeMultipleObjects`, `setAnchor`
+
+25 (issue #19): Multi-select bounding box respects frame layer — `nodeRef` in `CanvasImageNode` changed from `groupRef` (clip Group; Konva's `getClientRect()` ignores the clip, returning full content extent) to `frameRectRef` (invisible Rect at exact frame bounds); `syncRef` prop + `syncRefMapRef` in `CarouselStage` expose `syncGroupOnTransform` so the visual clip group stays in sync during live group drag/transform; group transformer `onTransform`/`onDragMove` call each image's sync fn — multi-select snap-to-guides extended to group drag (both transformer drag and manual imperative drag paths) and group resize via `boundBoxFunc`; `useSnapGuides` hook extended with `computeSnapGroup`/`computeSnapResizeGroup` that exclude all selected IDs from snap targets
 
 ## Upcoming (rough roadmap)
 - AI features: background removal UI, SAM segmentation, LaMa inpainting

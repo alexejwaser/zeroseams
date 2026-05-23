@@ -66,6 +66,7 @@ export function CarouselStage(): React.ReactElement {
   // --- Group transformer + marquee ---
   const groupTransformerRef = useRef<Konva.Transformer>(null)
   const nodeRefMapRef = useRef<Map<string, React.RefObject<Konva.Node>>>(new Map())
+  const syncRefMapRef = useRef<Map<string, React.MutableRefObject<(() => void) | null>>>(new Map())
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const marqueeStartRef = useRef<{ x: number; y: number } | null>(null)
   const marqueeCurrentRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -80,6 +81,12 @@ export function CarouselStage(): React.ReactElement {
   function getOrCreateNodeRef(id: string): React.RefObject<Konva.Node> {
     const map = nodeRefMapRef.current
     if (!map.has(id)) map.set(id, React.createRef<Konva.Node>())
+    return map.get(id)!
+  }
+
+  function getOrCreateSyncRef(id: string): React.MutableRefObject<(() => void) | null> {
+    const map = syncRefMapRef.current
+    if (!map.has(id)) map.set(id, { current: null })
     return map.get(id)!
   }
 
@@ -276,6 +283,9 @@ export function CarouselStage(): React.ReactElement {
     for (const id of nodeRefMapRef.current.keys()) {
       if (!currentIds.has(id)) nodeRefMapRef.current.delete(id)
     }
+    for (const id of syncRefMapRef.current.keys()) {
+      if (!currentIds.has(id)) syncRefMapRef.current.delete(id)
+    }
   }, [objectOrder])
 
   function getObjectBBoxForMarquee(obj: CanvasObject): { x: number; y: number; width: number; height: number } {
@@ -387,6 +397,20 @@ export function CarouselStage(): React.ReactElement {
     commitMultipleUpdates(patches)
     setGroupTransformKey(k => k + 1)
     setActiveGuides([])
+  }
+
+  // Sync image visual groups (groupRef) to their frame rects during live group transform/drag.
+  // Required because nodeRef now points to frameRectRef; the visual group must be driven manually.
+  function handleGroupTransformLive(): void {
+    for (const id of useCanvasStore.getState().selectedIds) {
+      syncRefMapRef.current.get(id)?.current?.()
+    }
+  }
+
+  function handleGroupDragLive(): void {
+    for (const id of useCanvasStore.getState().selectedIds) {
+      syncRefMapRef.current.get(id)?.current?.()
+    }
   }
 
   // --- Wheel: non-passive native listener to prevent browser scroll during zoom ---
@@ -937,6 +961,7 @@ export function CarouselStage(): React.ReactElement {
                   onSelect={() => setSelected(id)}
                   onGuidesChange={setActiveGuides}
                   nodeRef={getOrCreateNodeRef(id)}
+                  syncRef={getOrCreateSyncRef(id)}
                 />
               )
             }
@@ -991,6 +1016,8 @@ export function CarouselStage(): React.ReactElement {
             anchorSize={8}
             onTransformEnd={handleGroupTransformEnd}
             onDragEnd={handleGroupDragEnd}
+            onTransform={handleGroupTransformLive}
+            onDragMove={handleGroupDragLive}
             boundBoxFunc={(oldBox, newBox) => (newBox.width < 5 || newBox.height < 5 ? oldBox : newBox)}
           />
 

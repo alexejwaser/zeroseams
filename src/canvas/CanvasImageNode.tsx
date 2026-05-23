@@ -14,9 +14,10 @@ interface CanvasImageNodeProps {
   onSelect: () => void
   onGuidesChange: (guides: SnapGuide[]) => void
   nodeRef?: React.RefObject<Konva.Node>
+  syncRef?: React.MutableRefObject<(() => void) | null>
 }
 
-export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasImageNodeProps): React.ReactElement | null {
+export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef, syncRef }: CanvasImageNodeProps): React.ReactElement | null {
   const [loadedImage] = useImage(obj.src)
 
   // Hold the last successfully loaded HTMLImageElement so the component never
@@ -134,11 +135,14 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
     }
   }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight, obj.src])
 
-  // Re-run when image loads so transformer can attach on first select.
-  // Sync nodeRef so CarouselStage group transformer can attach to the outer clip group
+  // Sync nodeRef to frameRectRef so the group transformer uses frame bounds (not content extent).
+  // Also expose syncGroupOnTransform so CarouselStage can drive live visual sync during group transforms.
   useEffect(() => {
     if (nodeRef) {
-      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = groupRef.current
+      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = frameRectRef.current
+    }
+    if (syncRef) {
+      syncRef.current = syncGroupOnTransform
     }
   })
 
