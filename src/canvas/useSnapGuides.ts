@@ -181,6 +181,8 @@ export function computeSnapResize(
 export function useSnapGuides(): {
   computeSnap: (box: DragBox, excludeId: string) => { x: number; y: number; guides: SnapGuide[] }
   computeSnapResize: (box: DragBox, anchor: string, excludeId: string) => { box: DragBox; guides: SnapGuide[] }
+  computeSnapGroup: (box: DragBox, excludeIds: string[]) => { x: number; y: number; guides: SnapGuide[] }
+  computeSnapResizeGroup: (box: DragBox, anchor: string, excludeIds: string[]) => { box: DragBox; guides: SnapGuide[] }
 } {
   const objects = useCanvasStore((s) => s.objects)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
@@ -188,9 +190,10 @@ export function useSnapGuides(): {
   const frameWidth = useCanvasStore((s) => s.frameWidth)
   const frameHeight = useCanvasStore((s) => s.frameHeight)
 
-  function getObjects(excludeId: string): CanvasObject[] {
+  function getObjects(excludeId: string | string[]): CanvasObject[] {
+    const excludeSet = new Set(Array.isArray(excludeId) ? excludeId : [excludeId])
     return objectOrder
-      .filter((id) => id !== excludeId)
+      .filter((id) => !excludeSet.has(id))
       .map((id) => objects[id])
       .filter((obj): obj is CanvasObject => obj !== undefined)
   }
@@ -203,5 +206,18 @@ export function useSnapGuides(): {
     return computeSnapResize(box, anchor, getObjects(excludeId), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
-  return { computeSnap: boundComputeSnap, computeSnapResize: boundComputeSnapResize }
+  function boundComputeSnapGroup(box: DragBox, excludeIds: string[]) {
+    return computeSnap(box, getObjects(excludeIds), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
+  }
+
+  function boundComputeSnapResizeGroup(box: DragBox, anchor: string, excludeIds: string[]) {
+    return computeSnapResize(box, anchor, getObjects(excludeIds), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
+  }
+
+  return {
+    computeSnap: boundComputeSnap,
+    computeSnapResize: boundComputeSnapResize,
+    computeSnapGroup: boundComputeSnapGroup,
+    computeSnapResizeGroup: boundComputeSnapResizeGroup,
+  }
 }

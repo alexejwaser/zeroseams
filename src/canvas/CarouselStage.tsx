@@ -12,6 +12,7 @@ import { CanvasTextNode } from './CanvasTextNode'
 import { CanvasShapeNode } from './CanvasShapeNode'
 import { CanvasPathNode, computePathBBox, anchorsToPathData } from './CanvasPathNode'
 import { SnapGuides } from './SnapGuides'
+import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { useImageDrop } from './useImageDrop'
 import { useAutosave } from './useAutosave'
@@ -88,6 +89,26 @@ export function CarouselStage(): React.ReactElement {
     const map = syncRefMapRef.current
     if (!map.has(id)) map.set(id, { current: null })
     return map.get(id)!
+  }
+
+  const { computeSnapGroup, computeSnapResizeGroup } = useSnapGuides()
+  const pendingGroupGuidesRef = useRef<SnapGuide[]>([])
+
+  function getGroupBBox(ids: string[]): { x: number; y: number; width: number; height: number } | null {
+    const objs = useCanvasStore.getState().objects
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const id of ids) {
+      const node = nodeRefMapRef.current.get(id)?.current
+      const obj = objs[id]
+      if (!node || !obj) continue
+      const x = obj.type === 'path' ? obj.x + node.x() : node.x()
+      const y = obj.type === 'path' ? obj.y + node.y() : node.y()
+      const w = obj.type === 'image' ? (obj as ImageObject).frameWidth : obj.width
+      const h = obj.type === 'image' ? (obj as ImageObject).frameHeight : obj.height
+      minX = Math.min(minX, x); minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h)
+    }
+    return minX === Infinity ? null : { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
   }
 
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([])
@@ -401,16 +422,31 @@ export function CarouselStage(): React.ReactElement {
 
   // Sync image visual groups (groupRef) to their frame rects during live group transform/drag.
   // Required because nodeRef now points to frameRectRef; the visual group must be driven manually.
+  // Also emits pending snap guides computed in boundBoxFunc (resize) or computed inline (drag).
   function handleGroupTransformLive(): void {
-    for (const id of useCanvasStore.getState().selectedIds) {
-      syncRefMapRef.current.get(id)?.current?.()
-    }
+    const ids = useCanvasStore.getState().selectedIds
+    for (const id of ids) syncRefMapRef.current.get(id)?.current?.()
+    setActiveGuides(pendingGroupGuidesRef.current)
   }
 
   function handleGroupDragLive(): void {
-    for (const id of useCanvasStore.getState().selectedIds) {
-      syncRefMapRef.current.get(id)?.current?.()
+    const ids = useCanvasStore.getState().selectedIds
+    for (const id of ids) syncRefMapRef.current.get(id)?.current?.()
+
+    const groupBox = getGroupBBox(ids)
+    if (!groupBox) return
+    const { x: sx, y: sy, guides } = computeSnapGroup(groupBox, ids)
+    const dx = sx - groupBox.x
+    const dy = sy - groupBox.y
+    if (dx !== 0 || dy !== 0) {
+      for (const id of ids) {
+        const node = nodeRefMapRef.current.get(id)?.current
+        if (node) { node.x(node.x() + dx); node.y(node.y() + dy) }
+      }
+      for (const id of ids) syncRefMapRef.current.get(id)?.current?.()
+      groupTransformerRef.current?.getLayer()?.batchDraw()
     }
+    setActiveGuides(guides)
   }
 
   // --- Wheel: non-passive native listener to prevent browser scroll during zoom ---
@@ -625,13 +661,37 @@ export function CarouselStage(): React.ReactElement {
               const dy = pos.y - multiSelectDragStartRef.current.y
               if (Math.sqrt(dx * dx + dy * dy) > 3) {
                 multiSelectDragActiveRef.current = true
+                const objs = useCanvasStore.getState().objects
+                const ids = useCanvasStore.getState().selectedIds
+
+                // Compute proposed group bbox to snap it
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+                for (const [id, initPos] of multiSelectDragStartRef.current.positions) {
+                  const obj = objs[id]
+                  if (!obj) continue
+                  const x = obj.type === 'path' ? obj.x + initPos.x + dx : initPos.x + dx
+                  const y = obj.type === 'path' ? obj.y + initPos.y + dy : initPos.y + dy
+                  const w = obj.type === 'image' ? (obj as ImageObject).frameWidth : obj.width
+                  const h = obj.type === 'image' ? (obj as ImageObject).frameHeight : obj.height
+                  minX = Math.min(minX, x); minY = Math.min(minY, y)
+                  maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h)
+                }
+                const { x: sx, y: sy, guides } = computeSnapGroup(
+                  { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+                  ids,
+                )
+                const snapDx = sx - minX
+                const snapDy = sy - minY
+
                 for (const [id, initPos] of multiSelectDragStartRef.current.positions) {
                   const node = nodeRefMapRef.current.get(id)?.current
                   if (node) {
-                    node.x(initPos.x + dx)
-                    node.y(initPos.y + dy)
+                    node.x(initPos.x + dx + snapDx)
+                    node.y(initPos.y + dy + snapDy)
+                    syncRefMapRef.current.get(id)?.current?.()
                   }
                 }
+                setActiveGuides(guides)
                 groupTransformerRef.current?.getLayer()?.batchDraw()
               }
             }
@@ -1018,7 +1078,23 @@ export function CarouselStage(): React.ReactElement {
             onDragEnd={handleGroupDragEnd}
             onTransform={handleGroupTransformLive}
             onDragMove={handleGroupDragLive}
-            boundBoxFunc={(oldBox, newBox) => (newBox.width < 5 || newBox.height < 5 ? oldBox : newBox)}
+            boundBoxFunc={(oldBox, newBox) => {
+              if (newBox.width < 5 || newBox.height < 5) return oldBox
+              const anchor = groupTransformerRef.current?.getActiveAnchor() ?? ''
+              const rotation = newBox.rotation ?? 0
+              if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+                pendingGroupGuidesRef.current = []
+                return newBox
+              }
+              const ids = useCanvasStore.getState().selectedIds
+              const { box: snapped, guides } = computeSnapResizeGroup(
+                { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+                anchor,
+                ids,
+              )
+              pendingGroupGuidesRef.current = guides
+              return { ...snapped, rotation: newBox.rotation }
+            }}
           />
 
           {/* Marquee selection rectangle */}
