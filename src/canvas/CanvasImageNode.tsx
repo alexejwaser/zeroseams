@@ -41,6 +41,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   // Guides computed in boundBoxFunc, emitted after syncGroupOnTransform so that
   // the onGuidesChange state update doesn't fire mid-sync and reset the clip.
   const pendingGuidesRef = useRef<SnapGuide[]>([])
+  // Tracks mousedown position to distinguish a quick click from a drag in multi-select mode
+  const rectMouseDownPosRef = useRef<{ x: number; y: number } | null>(null)
 
   // Alt (option) key tracking for duplicate-on-drag
   const altHeldRef = useRef(false)
@@ -133,10 +135,10 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight, obj.src])
 
   // Re-run when image loads so transformer can attach on first select.
-  // Sync nodeRef so CarouselStage group transformer can attach to frameRectRef
+  // Sync nodeRef so CarouselStage group transformer can attach to the outer clip group
   useEffect(() => {
     if (nodeRef) {
-      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = frameRectRef.current
+      (nodeRef as React.MutableRefObject<Konva.Node | null>).current = groupRef.current
     }
   })
 
@@ -601,11 +603,23 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
         perfectDrawEnabled={false}
         draggable={!obj.locked && !obj.contentEditMode && !obj.maskEditMode && !isDrawTarget && !isInMultiSelectMode}
         listening={!obj.contentEditMode && !obj.maskEditMode && !isDrawTarget}
+        onMouseDown={(e) => {
+          if (isInMultiSelectMode) {
+            rectMouseDownPosRef.current = { x: e.evt.clientX, y: e.evt.clientY }
+          }
+        }}
         onClick={(e) => {
           if (!obj.contentEditMode && !obj.maskEditMode && !isDrawTarget) {
             if (e.evt.shiftKey) {
               addToSelection(obj.id)
             } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
+              // Suppress anchor-setting if the mouse moved significantly (was a drag)
+              if (rectMouseDownPosRef.current) {
+                const dx = e.evt.clientX - rectMouseDownPosRef.current.x
+                const dy = e.evt.clientY - rectMouseDownPosRef.current.y
+                rectMouseDownPosRef.current = null
+                if (Math.sqrt(dx * dx + dy * dy) > 3) return
+              }
               setAnchor(anchorId === obj.id ? null : obj.id)
             } else {
               onSelect()

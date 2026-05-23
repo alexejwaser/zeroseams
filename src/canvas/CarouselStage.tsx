@@ -70,6 +70,12 @@ export function CarouselStage(): React.ReactElement {
   const marqueeStartRef = useRef<{ x: number; y: number } | null>(null)
   const marqueeCurrentRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   const isMarqueeActiveRef = useRef(false)
+  const multiSelectDragStartRef = useRef<{
+    x: number
+    y: number
+    positions: Map<string, { x: number; y: number }>
+  } | null>(null)
+  const multiSelectDragActiveRef = useRef(false)
 
   function getOrCreateNodeRef(id: string): React.RefObject<Konva.Node> {
     const map = nodeRefMapRef.current
@@ -109,6 +115,7 @@ export function CarouselStage(): React.ReactElement {
   const isPanningRef = useRef(false)
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
   const [isSpacePanning, setIsSpacePanning] = useState(false)
+  const [groupTransformKey, setGroupTransformKey] = useState(0)
   const spacePanActiveRef = useRef(false)
 
   useImageDrop(containerRef)
@@ -261,7 +268,7 @@ export function CarouselStage(): React.ReactElement {
       tr.nodes([])
     }
     tr.getLayer()?.batchDraw()
-  }, [selectedIds])
+  }, [selectedIds, groupTransformKey])
 
   // Clean up dead node refs when objects are removed
   useEffect(() => {
@@ -315,8 +322,10 @@ export function CarouselStage(): React.ReactElement {
           frameX: newX, frameY: newY, x: newX, y: newY,
           frameWidth: newFW, frameHeight: newFH, width: newFW, height: newFH,
           rotation: newRotation,
-          contentOffsetX: img.contentOffsetX + (img.frameX - newX),
-          contentOffsetY: img.contentOffsetY + (img.frameY - newY),
+          contentOffsetX: img.contentOffsetX * newScaleX,
+          contentOffsetY: img.contentOffsetY * newScaleY,
+          contentWidth: img.contentWidth * newScaleX,
+          contentHeight: img.contentHeight * newScaleY,
         }
       } else if (obj.type === 'path') {
         const p = obj as PathObject
@@ -348,6 +357,7 @@ export function CarouselStage(): React.ReactElement {
       }
     }
     commitMultipleUpdates(patches)
+    setGroupTransformKey(k => k + 1)
     setActiveGuides([])
   }
 
@@ -375,6 +385,7 @@ export function CarouselStage(): React.ReactElement {
       }
     }
     commitMultipleUpdates(patches)
+    setGroupTransformKey(k => k + 1)
     setActiveGuides([])
   }
 
@@ -459,6 +470,7 @@ export function CarouselStage(): React.ReactElement {
         onMouseDown={(e) => {
           // Block Stage events when panning
           if (isPanningRef.current) return
+          if (e.evt.button === 1) return  // middle mouse belongs to container-level pan
 
           // --- Mask draw mode ---
           if (maskDrawMode !== null) {
@@ -485,6 +497,30 @@ export function CarouselStage(): React.ReactElement {
             penMouseDownPosRef.current = { x: pos.x, y: pos.y }
             penDragRef.current = null
             return
+          }
+
+          // Multi-select drag: record initial node positions when clicking a canvas object
+          if (selectedIds.length > 1 && activeTool === 'select' && e.target !== e.target.getStage() && e.evt.button === 0) {
+            // Skip if clicking on the group transformer itself (resize/rotate handles)
+            let isTransformerClick = false
+            let cur: Konva.Node | null = e.target as Konva.Node
+            while (cur) {
+              if (cur === groupTransformerRef.current) { isTransformerClick = true; break }
+              cur = cur.parent as Konva.Node | null
+            }
+            if (!isTransformerClick) {
+              const stage = e.target.getStage()
+              const pos = stage?.getRelativePointerPosition()
+              if (pos) {
+                const positions = new Map<string, { x: number; y: number }>()
+                for (const id of useCanvasStore.getState().selectedIds) {
+                  const node = nodeRefMapRef.current.get(id)?.current
+                  if (node) positions.set(id, { x: node.x(), y: node.y() })
+                }
+                multiSelectDragStartRef.current = { x: pos.x, y: pos.y, positions }
+                multiSelectDragActiveRef.current = false
+              }
+            }
           }
 
           if (e.target !== e.target.getStage()) return
@@ -555,6 +591,28 @@ export function CarouselStage(): React.ReactElement {
         onMouseMove={(e) => {
           // Block Stage events when panning
           if (isPanningRef.current) return
+
+          // Multi-select drag: imperatively move all selected nodes together
+          if (multiSelectDragStartRef.current) {
+            const stage = stageRef.current
+            const pos = stage?.getRelativePointerPosition()
+            if (pos) {
+              const dx = pos.x - multiSelectDragStartRef.current.x
+              const dy = pos.y - multiSelectDragStartRef.current.y
+              if (Math.sqrt(dx * dx + dy * dy) > 3) {
+                multiSelectDragActiveRef.current = true
+                for (const [id, initPos] of multiSelectDragStartRef.current.positions) {
+                  const node = nodeRefMapRef.current.get(id)?.current
+                  if (node) {
+                    node.x(initPos.x + dx)
+                    node.y(initPos.y + dy)
+                  }
+                }
+                groupTransformerRef.current?.getLayer()?.batchDraw()
+              }
+            }
+            return  // skip marquee and snap-guide updates during multi-drag (prevents React re-renders from overriding imperative positions)
+          }
 
           // --- Marquee selection drag ---
           if (isMarqueeActiveRef.current && marqueeStartRef.current) {
@@ -637,6 +695,39 @@ export function CarouselStage(): React.ReactElement {
         onMouseUp={(e) => {
           // Block Stage events when panning
           if (isPanningRef.current) return
+
+          // Multi-select drag commit
+          if (multiSelectDragStartRef.current) {
+            if (multiSelectDragActiveRef.current) {
+              const currentSelectedIds = useCanvasStore.getState().selectedIds
+              const currentObjects = useCanvasStore.getState().objects
+              const patches: Record<string, Partial<CanvasObject>> = {}
+              for (const id of currentSelectedIds) {
+                const node = nodeRefMapRef.current.get(id)?.current
+                if (!node) continue
+                const obj = currentObjects[id]
+                if (!obj) continue
+                if (obj.type === 'image') {
+                  patches[id] = { frameX: node.x(), frameY: node.y(), x: node.x(), y: node.y() }
+                } else if (obj.type === 'path') {
+                  const p = obj as PathObject
+                  const dx = node.x(); const dy = node.y()
+                  node.x(0); node.y(0)
+                  const newAnchors = p.anchors.map((a) => ({ ...a, x: a.x + dx, y: a.y + dy }))
+                  const bbox = computePathBBox(newAnchors)
+                  patches[id] = { anchors: newAnchors, x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height }
+                } else {
+                  patches[id] = { x: node.x(), y: node.y() }
+                }
+              }
+              commitMultipleUpdates(patches)
+              setGroupTransformKey(k => k + 1)
+              setActiveGuides([])
+            }
+            multiSelectDragStartRef.current = null
+            multiSelectDragActiveRef.current = false
+            return
+          }
 
           // --- Marquee selection finalize ---
           if (isMarqueeActiveRef.current) {
@@ -891,7 +982,8 @@ export function CarouselStage(): React.ReactElement {
           {/* Group transformer — active when 2+ objects are selected */}
           <Transformer
             ref={groupTransformerRef}
-            keepRatio={false}
+            keepRatio={true}
+            draggable
             borderStroke="#0096ff"
             borderStrokeWidth={1.5}
             anchorFill="#fff"
