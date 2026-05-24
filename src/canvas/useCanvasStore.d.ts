@@ -22,6 +22,8 @@ interface CanvasState {
     activeTool: 'select' | 'text' | 'shape' | 'pen';
     resizeMode: 'advanced' | 'auto';
     setResizeMode: (mode: 'advanced' | 'auto') => void;
+    snapEnabled: boolean;
+    toggleSnap: () => void;
     past: HistorySnapshot[];
     future: HistorySnapshot[];
     contextMenu: {

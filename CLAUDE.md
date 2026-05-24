@@ -62,7 +62,7 @@ Two-layer model — never collapse:
 ## Keyboard Shortcuts
 Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when focus is in input/textarea.
 
-`V` select · `T` text · `R` shape · `P` pen · `L` line · `Escape` deselect · `⌘A` select all · `⌘D` duplicate · `⌘Z/⇧Z` undo/redo · `⌘]/[` layer order · `⌘L` lock · arrows nudge · `⌫` delete
+`V` select · `T` text · `R` shape · `P` pen · `L` line · `S` snap toggle · `Escape` deselect · `⌘A` select all · `⌘D` duplicate · `⌘Z/⇧Z` undo/redo · `⌘]/[` layer order · `⌘L` lock · arrows nudge · `⌫` delete
 
 ## Sprint History (completed)
 1–7: Project scaffold, canvas foundation, types, Electron shell
@@ -83,6 +83,10 @@ Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when 
 24 (issue #4): Rework multi-object selection — group transformer: single Konva `<Transformer>` in `CarouselStage` wires to all selected nodes (`nodeRefMapRef` + `nodeRef` prop on all 4 node components); resize/rotate/drag apply to full group (one undo step via `commitMultipleUpdates`); marquee rubber-band selection on empty canvas drag (`isMarqueeActiveRef`, `marqueeCurrentRef`), Shift+drag extends selection; reference object (`anchorId` in store): click selected object → gold `#f5a623` border, Layer Panel `★` button, Properties Panel "Reference" dropdown — `alignObjects` aligns TO anchor bbox when set; individual transformers and `draggable` suppressed when `selectedIds.length > 1`; keyboard shortcuts extended: Delete/arrow nudge/Cmd+D all act on full `selectedIds[]` (single undo step each); new store actions: `commitMultipleUpdates`, `removeMultipleObjects`, `setAnchor`
 
 25 (issue #19): Multi-select bounding box respects frame layer — `nodeRef` in `CanvasImageNode` changed from `groupRef` (clip Group; Konva's `getClientRect()` ignores the clip, returning full content extent) to `frameRectRef` (invisible Rect at exact frame bounds); `syncRef` prop + `syncRefMapRef` in `CarouselStage` expose `syncGroupOnTransform` so the visual clip group stays in sync during live group drag/transform; group transformer `onTransform`/`onDragMove` call each image's sync fn — multi-select snap-to-guides extended to group drag (both transformer drag and manual imperative drag paths) and group resize via `boundBoxFunc`; `useSnapGuides` hook extended with `computeSnapGroup`/`computeSnapResizeGroup` that exclude all selected IDs from snap targets
+
+26 (issue #12): Rotation snapping + unified snap toggle — `snapEnabled: boolean` + `toggleSnap()` in store (default on); `useSnapGuides` hook exposes `snapRotation` (gated on `snapEnabled`) + all 4 position/resize snap methods short-circuit when snap is off; rotation snap uses Konva's native `rotationSnaps={[0,45,90,135,180,225,270,315]}` + `rotationSnapTolerance={8}` props on all Transformer components (individual nodes + group) — live snap during drag with no position drift; `snapRotation` also applied in `onTransformEnd` / `handleGroupTransformEnd` as commit-time safety; `S` key toggles snap; Toolbar snap button (crosshair icon, `#0af` when on)
+
+27 (issue #3): Pen tool anchor conversion + larger handles — double-clicking an anchor in edit mode toggles corner ↔ curve: curve→corner zeros both handles; corner→curve computes tangent-direction handles (30px, using prev/next anchor direction, wraps correctly for closed paths); each toggle creates one undo entry via `commitUpdate`; anchor circle `radius 5→7`, handle circles `radius 4→6`
 
 ## Upcoming (rough roadmap)
 - AI features: background removal UI, SAM segmentation, LaMa inpainting

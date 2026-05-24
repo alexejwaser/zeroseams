@@ -178,13 +178,25 @@ export function computeSnapResize(
   return { box: { x, y, width, height }, guides }
 }
 
+const ROTATION_SNAP_ANGLES = [0, 45, 90, 135, 180, -135, -90, -45]
+const ROTATION_SNAP_THRESHOLD = 8
+
+export function _snapRotation(degrees: number): number {
+  for (const target of ROTATION_SNAP_ANGLES) {
+    if (Math.abs(degrees - target) < ROTATION_SNAP_THRESHOLD) return target
+  }
+  return degrees
+}
+
 export function useSnapGuides(): {
   computeSnap: (box: DragBox, excludeId: string) => { x: number; y: number; guides: SnapGuide[] }
   computeSnapResize: (box: DragBox, anchor: string, excludeId: string) => { box: DragBox; guides: SnapGuide[] }
   computeSnapGroup: (box: DragBox, excludeIds: string[]) => { x: number; y: number; guides: SnapGuide[] }
   computeSnapResizeGroup: (box: DragBox, anchor: string, excludeIds: string[]) => { box: DragBox; guides: SnapGuide[] }
+  snapRotation: (degrees: number) => number
 } {
   const objects = useCanvasStore((s) => s.objects)
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const frameCount = useCanvasStore((s) => s.frameCount)
   const frameWidth = useCanvasStore((s) => s.frameWidth)
@@ -199,18 +211,22 @@ export function useSnapGuides(): {
   }
 
   function boundComputeSnap(box: DragBox, excludeId: string) {
+    if (!snapEnabled) return { x: box.x, y: box.y, guides: [] }
     return computeSnap(box, getObjects(excludeId), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
   function boundComputeSnapResize(box: DragBox, anchor: string, excludeId: string) {
+    if (!snapEnabled) return { box, guides: [] }
     return computeSnapResize(box, anchor, getObjects(excludeId), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
   function boundComputeSnapGroup(box: DragBox, excludeIds: string[]) {
+    if (!snapEnabled) return { x: box.x, y: box.y, guides: [] }
     return computeSnap(box, getObjects(excludeIds), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
   function boundComputeSnapResizeGroup(box: DragBox, anchor: string, excludeIds: string[]) {
+    if (!snapEnabled) return { box, guides: [] }
     return computeSnapResize(box, anchor, getObjects(excludeIds), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
@@ -219,5 +235,6 @@ export function useSnapGuides(): {
     computeSnapResize: boundComputeSnapResize,
     computeSnapGroup: boundComputeSnapGroup,
     computeSnapResizeGroup: boundComputeSnapResizeGroup,
+    snapRotation: (degrees: number) => !snapEnabled ? degrees : _snapRotation(degrees),
   }
 }

@@ -64,6 +64,8 @@ interface CanvasState {
   activeTool: 'select' | 'text' | 'shape' | 'pen'
   resizeMode: 'advanced' | 'auto'
   setResizeMode: (mode: 'advanced' | 'auto') => void
+  snapEnabled: boolean
+  toggleSnap: () => void
   past: HistorySnapshot[]
   future: HistorySnapshot[]
   // Volatile UI state — NOT in HistorySnapshot
@@ -186,6 +188,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     backgroundColor: '#ffffff',
     activeTool: 'select',
     resizeMode: 'advanced',
+    snapEnabled: true,
     past: [],
     future: [],
     contextMenu: null,
@@ -342,6 +345,8 @@ export const useCanvasStore = create<CanvasState>((set) => {
     setActiveTool: (tool) => set({ activeTool: tool }),
 
     setResizeMode: (mode) => set({ resizeMode: mode }),
+
+    toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
 
     reorderObjects: (fromId, toId, side) =>
       set((state) => {

@@ -32,7 +32,8 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const setAnchor = useCanvasStore((s) => s.setAnchor)
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
-  const { computeSnap, computeSnapResize } = useSnapGuides()
+  const { computeSnap, computeSnapResize, snapRotation } = useSnapGuides()
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled)
 
   const isInMultiSelectMode = selectedIds.length > 1
   const isAnchor = anchorId === obj.id
@@ -296,7 +297,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
     const { x, y } = getTopLeftFromNode(node)
     const { width, height } = getDimsFromNode(node)
     bakeNodeScale(node, width, height, x, y)
-    commitUpdate(obj.id, { x, y, width, height, scaleX: 1, scaleY: 1, rotation: node.rotation() })
+    commitUpdate(obj.id, { x, y, width, height, scaleX: 1, scaleY: 1, rotation: snapRotation(node.rotation()) })
   }
 
   function handleContextMenu(e: Konva.KonvaEventObject<PointerEvent>): void {
@@ -469,11 +470,17 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
       <Transformer
         ref={transformerRef}
         keepRatio={false}
+        rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
+        rotationSnapTolerance={8}
         boundBoxFunc={(oldBox, newBox) => {
           if (newBox.width < 5 || newBox.height < 5) return oldBox
           const rotation = newBox.rotation ?? 0
           const anchor = transformerRef.current?.getActiveAnchor() ?? ''
-          if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+          if (anchor === 'rotater') {
+            pendingGuidesRef.current = []
+            return newBox
+          }
+          if (Math.abs(rotation) > 0.01 || !anchor) {
             pendingGuidesRef.current = []
             return newBox
           }

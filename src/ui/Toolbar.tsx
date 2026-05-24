@@ -40,6 +40,13 @@ const AUTOFILL_ICON = (
   </svg>
 )
 
+const SNAP_ICON = (
+  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ display: 'block' }}>
+    <circle cx="6.5" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.5"/>
+    <path d="M6.5 1v2M6.5 10v2M1 6.5h2M10 6.5h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+)
+
 const PLATFORM_LABELS: Record<Platform, string> = {
   instagram: 'Instagram',
   tiktok: 'TikTok',
@@ -93,6 +100,8 @@ export function Toolbar(): React.ReactElement {
   const setPlatform = useCanvasStore((s) => s.setPlatform)
   const resizeMode = useCanvasStore((s) => s.resizeMode)
   const setResizeMode = useCanvasStore((s) => s.setResizeMode)
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled)
+  const toggleSnap = useCanvasStore((s) => s.toggleSnap)
   const loadProject = useCanvasStore((s) => s.loadProject)
   const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
   const setActiveShapeKind = useCanvasStore((s) => s.setActiveShapeKind)
@@ -531,7 +540,7 @@ export function Toolbar(): React.ReactElement {
         )}
       </div>
 
-      {/* Center: undo/redo + tool buttons */}
+      {/* Center: undo/redo + tool buttons + snap toggle */}
       <div
         style={{
           flex: 1,
@@ -607,6 +616,30 @@ export function Toolbar(): React.ReactElement {
             ))}
           </div>
         )}
+
+        <div style={{ width: 8 }} />
+
+        {/* Snap toggle */}
+        <button
+          onClick={toggleSnap}
+          aria-pressed={snapEnabled}
+          title={snapEnabled ? 'Snapping on (S)' : 'Snapping off (S)'}
+          style={{
+            width: 30,
+            height: 30,
+            background: snapEnabled ? '#0af' : '#333',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background 0.15s',
+          }}
+        >
+          {SNAP_ICON}
+        </button>
       </div>
 
       {/* Right: platform selector + ratio presets + frame count + export + save status */}

@@ -82,7 +82,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
   const zoom = useViewportStore((s) => s.zoom)
   const panX = useViewportStore((s) => s.panX)
   const panY = useViewportStore((s) => s.panY)
-  const { computeSnap, computeSnapResize } = useSnapGuides()
+  const { computeSnap, computeSnapResize, snapRotation } = useSnapGuides()
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled)
   const pendingGuidesRef = useRef<SnapGuide[]>([])
 
   // Alt (option) key tracking for duplicate-on-drag
@@ -629,7 +630,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
               x: node.x(), y: node.y(),
               width: absWidth, height: absHeight,
               scaleX: 1, scaleY: 1,
-              rotation: node.rotation(),
+              rotation: snapRotation(node.rotation()),
               fontSize: newFontSize,
             })
           } else {
@@ -637,7 +638,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
               x: node.x(), y: node.y(),
               width: absWidth, height: absHeight,
               scaleX: 1, scaleY: 1,
-              rotation: node.rotation(),
+              rotation: snapRotation(node.rotation()),
             })
           }
         }}
@@ -651,6 +652,8 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
       <Transformer
         ref={transformerRef}
         keepRatio={false}
+        rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
+        rotationSnapTolerance={8}
         enabledAnchors={[
           'top-left', 'top-center', 'top-right',
           'middle-right', 'bottom-right', 'bottom-center',
@@ -660,7 +663,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
           if (newBox.width < 20 || newBox.height < 10) return oldBox
           const rotation = newBox.rotation ?? 0
           const anchor = transformerRef.current?.getActiveAnchor() ?? ''
-          if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+          if (anchor === 'rotater') {
+            pendingGuidesRef.current = []
+            return newBox
+          }
+          if (Math.abs(rotation) > 0.01 || !anchor) {
             pendingGuidesRef.current = []
             return newBox
           }

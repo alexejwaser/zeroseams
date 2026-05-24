@@ -47,6 +47,7 @@ export function useKeyboardShortcuts(): void {
   const moveObject = useCanvasStore((s) => s.moveObject)
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
+  const toggleSnap = useCanvasStore((s) => s.toggleSnap)
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
@@ -78,6 +79,7 @@ export function useKeyboardShortcuts(): void {
           setActiveTool('pen')
           return
         }
+        if (e.key === 's') { toggleSnap(); return }
       }
 
       if (e.key === 'Escape') {
@@ -318,5 +320,6 @@ export function useKeyboardShortcuts(): void {
     moveObject,
     undo,
     redo,
+    toggleSnap,
   ])
 }

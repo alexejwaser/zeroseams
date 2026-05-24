@@ -244,6 +244,42 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
     } as Partial<PathObject> as Partial<CanvasObject>)
   }
 
+  function handleAnchorDblClick(idx: number): void {
+    const anchor = obj.anchors[idx]
+    const hasHandles =
+      anchor.handleIn.dx !== 0 || anchor.handleIn.dy !== 0 ||
+      anchor.handleOut.dx !== 0 || anchor.handleOut.dy !== 0
+
+    let newAnchors: AnchorPoint[]
+
+    if (hasHandles) {
+      newAnchors = obj.anchors.map((a, i) =>
+        i === idx ? { ...a, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } } : a
+      )
+    } else {
+      const total = obj.anchors.length
+      const prevIdx = obj.closed ? (idx - 1 + total) % total : idx > 0 ? idx - 1 : idx + 1
+      const nextIdx = obj.closed ? (idx + 1) % total : idx < total - 1 ? idx + 1 : idx - 1
+      const prev = obj.anchors[prevIdx]
+      const next = obj.anchors[nextIdx]
+      const tx = next.x - prev.x
+      const ty = next.y - prev.y
+      const len = Math.sqrt(tx * tx + ty * ty)
+      const HANDLE_LEN = 30
+      const hdx = len > 0.001 ? (tx / len) * HANDLE_LEN : HANDLE_LEN
+      const hdy = len > 0.001 ? (ty / len) * HANDLE_LEN : 0
+      newAnchors = obj.anchors.map((a, i) =>
+        i === idx ? { ...a, handleOut: { dx: hdx, dy: hdy }, handleIn: { dx: -hdx, dy: -hdy } } : a
+      )
+    }
+
+    const bbox = computePathBBox(newAnchors)
+    commitUpdate(obj.id, {
+      anchors: newAnchors,
+      x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height,
+    } as Partial<PathObject> as Partial<CanvasObject>)
+  }
+
   // --- Handle drag (edit mode) ---
 
   function handleHandleDragMove(idx: number, side: 'in' | 'out', e: Konva.KonvaEventObject<DragEvent>): void {
@@ -390,7 +426,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
             {hasIn && (
               <KonvaCircle
                 x={anchor.x + anchor.handleIn.dx} y={anchor.y + anchor.handleIn.dy}
-                radius={4} fill="#fff" stroke="#0096ff" strokeWidth={1.5}
+                radius={6} fill="#fff" stroke="#0096ff" strokeWidth={1.5}
                 draggable
                 onDragMove={(e) => handleHandleDragMove(idx, 'in', e)}
                 onDragEnd={(e) => handleHandleDragEnd(idx, 'in', e)}
@@ -399,7 +435,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
             {hasOut && (
               <KonvaCircle
                 x={anchor.x + anchor.handleOut.dx} y={anchor.y + anchor.handleOut.dy}
-                radius={4} fill="#fff" stroke="#0096ff" strokeWidth={1.5}
+                radius={6} fill="#fff" stroke="#0096ff" strokeWidth={1.5}
                 draggable
                 onDragMove={(e) => handleHandleDragMove(idx, 'out', e)}
                 onDragEnd={(e) => handleHandleDragEnd(idx, 'out', e)}
@@ -407,12 +443,13 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
             )}
             <KonvaCircle
               x={anchor.x} y={anchor.y}
-              radius={5}
+              radius={7}
               fill={hasIn || hasOut ? '#4488ff' : '#fff'}
               stroke="#0096ff" strokeWidth={2}
               draggable
               onDragMove={(e) => handleAnchorDragMove(idx, e)}
               onDragEnd={(e) => handleAnchorDragEnd(idx, e)}
+              onDblClick={() => handleAnchorDblClick(idx)}
             />
           </React.Fragment>
         )

@@ -56,6 +56,7 @@ export function CarouselStage(): React.ReactElement {
   const clearMaskDrawMode = useCanvasStore((s) => s.clearMaskDrawMode)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled)
 
   // Viewport store
   const zoom = useViewportStore((s) => s.zoom)
@@ -91,7 +92,7 @@ export function CarouselStage(): React.ReactElement {
     return map.get(id)!
   }
 
-  const { computeSnapGroup, computeSnapResizeGroup } = useSnapGuides()
+  const { computeSnapGroup, computeSnapResizeGroup, snapRotation } = useSnapGuides()
   const pendingGroupGuidesRef = useRef<SnapGuide[]>([])
 
   function getGroupBBox(ids: string[]): { x: number; y: number; width: number; height: number } | null {
@@ -343,7 +344,7 @@ export function CarouselStage(): React.ReactElement {
       const newY = node.y()
       const newScaleX = node.scaleX()
       const newScaleY = node.scaleY()
-      const newRotation = node.rotation()
+      const newRotation = snapRotation(node.rotation())
       if (obj.type === 'image') {
         const img = obj as ImageObject
         const newFW = img.frameWidth * newScaleX
@@ -1069,6 +1070,8 @@ export function CarouselStage(): React.ReactElement {
             ref={groupTransformerRef}
             keepRatio={true}
             draggable
+            rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
+            rotationSnapTolerance={8}
             borderStroke="#0096ff"
             borderStrokeWidth={1.5}
             anchorFill="#fff"
@@ -1082,7 +1085,11 @@ export function CarouselStage(): React.ReactElement {
               if (newBox.width < 5 || newBox.height < 5) return oldBox
               const anchor = groupTransformerRef.current?.getActiveAnchor() ?? ''
               const rotation = newBox.rotation ?? 0
-              if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+              if (anchor === 'rotater') {
+                pendingGroupGuidesRef.current = []
+                return newBox
+              }
+              if (Math.abs(rotation) > 0.01 || !anchor) {
                 pendingGroupGuidesRef.current = []
                 return newBox
               }

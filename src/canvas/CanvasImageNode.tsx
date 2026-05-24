@@ -65,7 +65,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
 
   const isInMultiSelectMode = selectedIds.length > 1
   const isAnchor = anchorId === obj.id
-  const { computeSnap, computeSnapResize } = useSnapGuides()
+  const { computeSnap, computeSnapResize, snapRotation } = useSnapGuides()
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled)
 
   // Memoized so React-Konva sees the same object reference between renders while
   // the frame dimensions are unchanged. Without this, every re-render (e.g. from
@@ -333,7 +334,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
     const newFrameY = rect.y()
     const newFrameWidth = rect.width() * rect.scaleX()
     const newFrameHeight = rect.height() * rect.scaleY()
-    const newRotation = rect.rotation()
+    const newRotation = snapRotation(rect.rotation())
 
     // Bake scale back into width/height so future transforms start clean.
     rect.width(newFrameWidth)
@@ -656,13 +657,20 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
       <Transformer
         ref={transformerRef}
         keepRatio={false}
+        rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
+        rotationSnapTolerance={8}
         boundBoxFunc={(oldBox, newBox) => {
           if (newBox.width < 5 || newBox.height < 5) return oldBox
 
           const rotation = newBox.rotation ?? 0
           const anchor = transformerRef.current?.getActiveAnchor() ?? ''
 
-          if (Math.abs(rotation) > 0.01 || !anchor || anchor === 'rotater') {
+          if (anchor === 'rotater') {
+            pendingGuidesRef.current = []
+            return newBox
+          }
+
+          if (Math.abs(rotation) > 0.01 || !anchor) {
             pendingGuidesRef.current = []
             return newBox
           }
