@@ -88,6 +88,8 @@ Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when 
 
 27 (issue #3): Pen tool anchor conversion + larger handles — double-clicking an anchor in edit mode toggles corner ↔ curve: curve→corner zeros both handles; corner→curve computes tangent-direction handles (30px, using prev/next anchor direction, wraps correctly for closed paths); each toggle creates one undo entry via `commitUpdate`; anchor circle `radius 5→7`, handle circles `radius 4→6`
 
+28 (issue #22): Compact icon-first toolbar redesign — install `lucide-react`; all text-only tool buttons (Select/Text/Shape/Pen) replaced with icon-only buttons (`MousePointer2`, `Type`, `Square`/`Circle`/`Minus` dynamic on active sub-type, `PenTool`); Undo/Redo → `Undo2`/`Redo2`; Open → `FolderOpen` icon only; Save → `Save` icon + "Save" text; Export → `ImageDown` + "Export"; shared `iconBtnStyle(active, disabled)` helper replaces verbose per-button inline styles; toolbar height 48→40px; `title` attribute on every button with keyboard shortcut hints; snap/crop/autofill custom SVGs unchanged
+
 ## Upcoming (rough roadmap)
 - AI features: background removal UI, SAM segmentation, LaMa inpainting
 - Typography: font picker, Google Fonts integration
