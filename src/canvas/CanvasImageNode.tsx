@@ -7,6 +7,8 @@ import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { anchorsToPathData } from './CanvasPathNode'
+import { CANVAS_SCALE } from './constants'
+import { useViewportStore } from './useViewportStore'
 
 interface CanvasImageNodeProps {
   obj: ImageObject
@@ -63,6 +65,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const resizeMode = useCanvasStore((s) => s.resizeMode)
+  const { zoom, panX, panY } = useViewportStore((s) => ({ zoom: s.zoom, panX: s.panX, panY: s.panY }))
 
   const isInMultiSelectMode = selectedIds.length > 1
   const isAnchor = anchorId === obj.id
@@ -690,11 +693,28 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
             return newBox
           }
 
-          const { box: snapped, guides } = computeSnapResize(
-            { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+          const scale = CANVAS_SCALE * zoom
+          const screenThreshold = 8
+          const logicalThreshold = screenThreshold / scale
+          const logicalBox = {
+            x: (newBox.x - panX) / scale,
+            y: (newBox.y - panY) / scale,
+            width: newBox.width / scale,
+            height: newBox.height / scale,
+          }
+          const { box: snappedLogical, guides } = computeSnapResize(
+            logicalBox,
             anchor,
             obj.id,
+            logicalThreshold,
+            true,
           )
+          const snapped = {
+            x: snappedLogical.x * scale + panX,
+            y: snappedLogical.y * scale + panY,
+            width: snappedLogical.width * scale,
+            height: snappedLogical.height * scale,
+          }
           pendingGuidesRef.current = guides
           return { ...snapped, rotation: newBox.rotation }
         }}

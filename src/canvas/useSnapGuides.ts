@@ -110,6 +110,8 @@ export function computeSnap(
 
 // Snaps only the specific edge being dragged (determined by anchor name).
 // Used in Transformer boundBoxFunc so each handle snaps its own edge.
+// When keepRatio is true and a corner handle is active, snaps a single axis
+// and derives the other from the aspect ratio to preserve proportionality.
 export function computeSnapResize(
   box: DragBox,
   anchor: string,
@@ -118,6 +120,7 @@ export function computeSnapResize(
   frameWidth: number,
   frameHeight: number,
   threshold: number,
+  keepRatio?: boolean,
 ): { box: DragBox; guides: SnapGuide[] } {
   const { verticalTargets, horizontalTargets } = buildTargets(allObjects, frameCount, frameWidth, frameHeight)
 
@@ -129,6 +132,98 @@ export function computeSnapResize(
   const topFree = anchor === 'top-left' || anchor === 'top-center' || anchor === 'top-right'
   const bottomFree = anchor === 'bottom-left' || anchor === 'bottom-center' || anchor === 'bottom-right'
 
+  const isCorner = (leftFree || rightFree) && (topFree || bottomFree)
+
+  if (keepRatio && isCorner) {
+    // box is already proportional (Konva enforces this before calling boundBoxFunc).
+    // Snap each free edge independently, then pick the axis with the smaller snap
+    // distance and derive the other axis from the aspect ratio.
+    const aspectRatio = box.width / box.height
+
+    // --- Try snapping horizontal free edge ---
+    let hBestDist = threshold
+    let hBestSnap = rightFree ? x + width : x
+    let hGuide: SnapGuide | null = null
+    if (rightFree) {
+      for (const t of verticalTargets) {
+        const d = Math.abs((x + width) - t.position)
+        if (d < hBestDist) { hBestDist = d; hBestSnap = t.position; hGuide = { orientation: 'v', position: t.position, kind: t.kind } }
+      }
+    } else {
+      // leftFree
+      for (const t of verticalTargets) {
+        const d = Math.abs(x - t.position)
+        if (d < hBestDist) { hBestDist = d; hBestSnap = t.position; hGuide = { orientation: 'v', position: t.position, kind: t.kind } }
+      }
+    }
+
+    // --- Try snapping vertical free edge ---
+    let vBestDist = threshold
+    let vBestSnap = bottomFree ? y + height : y
+    let vGuide: SnapGuide | null = null
+    if (bottomFree) {
+      for (const t of horizontalTargets) {
+        const d = Math.abs((y + height) - t.position)
+        if (d < vBestDist) { vBestDist = d; vBestSnap = t.position; vGuide = { orientation: 'h', position: t.position, kind: t.kind } }
+      }
+    } else {
+      // topFree
+      for (const t of horizontalTargets) {
+        const d = Math.abs(y - t.position)
+        if (d < vBestDist) { vBestDist = d; vBestSnap = t.position; vGuide = { orientation: 'h', position: t.position, kind: t.kind } }
+      }
+    }
+
+    const hSnapped = hBestDist < threshold
+    const vSnapped = vBestDist < threshold
+
+    if (!hSnapped && !vSnapped) return { box: { x, y, width, height }, guides: [] }
+
+    // Pick axis with smaller snap distance; if tie, prefer horizontal
+    const useHoriz = !vSnapped || (hSnapped && hBestDist <= vBestDist)
+
+    if (useHoriz) {
+      // Snap the horizontal edge, derive vertical from aspect ratio
+      if (rightFree) {
+        width = Math.max(5, hBestSnap - x)
+      } else {
+        const fixedRight = x + width
+        x = hBestSnap
+        width = Math.max(5, fixedRight - hBestSnap)
+      }
+      const newHeight = width / aspectRatio
+      if (bottomFree) {
+        height = newHeight
+      } else {
+        // topFree — fix bottom, move top
+        y = (y + height) - newHeight
+        height = newHeight
+      }
+      if (hGuide) guides.push(hGuide)
+    } else {
+      // Snap the vertical edge, derive horizontal from aspect ratio
+      if (bottomFree) {
+        height = Math.max(5, vBestSnap - y)
+      } else {
+        const fixedBottom = y + height
+        y = vBestSnap
+        height = Math.max(5, fixedBottom - vBestSnap)
+      }
+      const newWidth = height * aspectRatio
+      if (rightFree) {
+        width = newWidth
+      } else {
+        // leftFree — fix right, move left
+        x = (x + width) - newWidth
+        width = newWidth
+      }
+      if (vGuide) guides.push(vGuide)
+    }
+
+    return { box: { x, y, width, height }, guides }
+  }
+
+  // Non-proportional (or side handle): snap each free edge independently
   if (leftFree) {
     const fixedRight = x + width
     let bestDist = threshold, bestSnap = x
@@ -190,9 +285,9 @@ export function _snapRotation(degrees: number): number {
 
 export function useSnapGuides(): {
   computeSnap: (box: DragBox, excludeId: string) => { x: number; y: number; guides: SnapGuide[] }
-  computeSnapResize: (box: DragBox, anchor: string, excludeId: string) => { box: DragBox; guides: SnapGuide[] }
+  computeSnapResize: (box: DragBox, anchor: string, excludeId: string, threshold: number, keepRatio?: boolean) => { box: DragBox; guides: SnapGuide[] }
   computeSnapGroup: (box: DragBox, excludeIds: string[]) => { x: number; y: number; guides: SnapGuide[] }
-  computeSnapResizeGroup: (box: DragBox, anchor: string, excludeIds: string[]) => { box: DragBox; guides: SnapGuide[] }
+  computeSnapResizeGroup: (box: DragBox, anchor: string, excludeIds: string[], threshold: number, keepRatio?: boolean) => { box: DragBox; guides: SnapGuide[] }
   snapRotation: (degrees: number) => number
 } {
   const objects = useCanvasStore((s) => s.objects)
@@ -215,9 +310,9 @@ export function useSnapGuides(): {
     return computeSnap(box, getObjects(excludeId), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
-  function boundComputeSnapResize(box: DragBox, anchor: string, excludeId: string) {
+  function boundComputeSnapResize(box: DragBox, anchor: string, excludeId: string, threshold: number, keepRatio?: boolean) {
     if (!snapEnabled) return { box, guides: [] }
-    return computeSnapResize(box, anchor, getObjects(excludeId), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
+    return computeSnapResize(box, anchor, getObjects(excludeId), frameCount, frameWidth, frameHeight, threshold, keepRatio)
   }
 
   function boundComputeSnapGroup(box: DragBox, excludeIds: string[]) {
@@ -225,9 +320,9 @@ export function useSnapGuides(): {
     return computeSnap(box, getObjects(excludeIds), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
   }
 
-  function boundComputeSnapResizeGroup(box: DragBox, anchor: string, excludeIds: string[]) {
+  function boundComputeSnapResizeGroup(box: DragBox, anchor: string, excludeIds: string[], threshold: number, keepRatio?: boolean) {
     if (!snapEnabled) return { box, guides: [] }
-    return computeSnapResize(box, anchor, getObjects(excludeIds), frameCount, frameWidth, frameHeight, SNAP_THRESHOLD)
+    return computeSnapResize(box, anchor, getObjects(excludeIds), frameCount, frameWidth, frameHeight, threshold, keepRatio)
   }
 
   return {

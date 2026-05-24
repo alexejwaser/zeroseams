@@ -671,11 +671,28 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
             pendingGuidesRef.current = []
             return newBox
           }
-          const { box: snapped, guides } = computeSnapResize(
-            { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+          const scale = CANVAS_SCALE * zoom
+          const screenThreshold = 8
+          const logicalThreshold = screenThreshold / scale
+          const logicalBox = {
+            x: (newBox.x - panX) / scale,
+            y: (newBox.y - panY) / scale,
+            width: newBox.width / scale,
+            height: newBox.height / scale,
+          }
+          const { box: snappedLogical, guides } = computeSnapResize(
+            logicalBox,
             anchor,
             obj.id,
+            logicalThreshold,
+            false,
           )
+          const snapped = {
+            x: snappedLogical.x * scale + panX,
+            y: snappedLogical.y * scale + panY,
+            width: snappedLogical.width * scale,
+            height: snappedLogical.height * scale,
+          }
           pendingGuidesRef.current = guides
           return { ...snapped, rotation: newBox.rotation }
         }}

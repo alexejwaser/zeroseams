@@ -12,6 +12,8 @@ import type { ShapeObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
+import { CANVAS_SCALE } from './constants'
+import { useViewportStore } from './useViewportStore'
 
 interface CanvasShapeNodeProps {
   obj: ShapeObject
@@ -34,6 +36,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const { computeSnap, computeSnapResize, snapRotation } = useSnapGuides()
   const snapEnabled = useCanvasStore((s) => s.snapEnabled)
+  const { zoom, panX, panY } = useViewportStore((s) => ({ zoom: s.zoom, panX: s.panX, panY: s.panY }))
 
   const isInMultiSelectMode = selectedIds.length > 1
   const isAnchor = anchorId === obj.id
@@ -484,11 +487,28 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
             pendingGuidesRef.current = []
             return newBox
           }
-          const { box: snapped, guides } = computeSnapResize(
-            { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+          const scale = CANVAS_SCALE * zoom
+          const screenThreshold = 8
+          const logicalThreshold = screenThreshold / scale
+          const logicalBox = {
+            x: (newBox.x - panX) / scale,
+            y: (newBox.y - panY) / scale,
+            width: newBox.width / scale,
+            height: newBox.height / scale,
+          }
+          const { box: snappedLogical, guides } = computeSnapResize(
+            logicalBox,
             anchor,
             obj.id,
+            logicalThreshold,
+            false,
           )
+          const snapped = {
+            x: snappedLogical.x * scale + panX,
+            y: snappedLogical.y * scale + panY,
+            width: snappedLogical.width * scale,
+            height: snappedLogical.height * scale,
+          }
           pendingGuidesRef.current = guides
           return { ...snapped, rotation: newBox.rotation }
         }}

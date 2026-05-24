@@ -1120,11 +1120,28 @@ export function CarouselStage(): React.ReactElement {
                 return newBox
               }
               const ids = useCanvasStore.getState().selectedIds
-              const { box: snapped, guides } = computeSnapResizeGroup(
-                { x: newBox.x, y: newBox.y, width: newBox.width, height: newBox.height },
+              const scale = CANVAS_SCALE * zoom
+              const screenThreshold = 8
+              const logicalThreshold = screenThreshold / scale
+              const logicalBox = {
+                x: (newBox.x - panX) / scale,
+                y: (newBox.y - panY) / scale,
+                width: newBox.width / scale,
+                height: newBox.height / scale,
+              }
+              const { box: snappedLogical, guides } = computeSnapResizeGroup(
+                logicalBox,
                 anchor,
                 ids,
+                logicalThreshold,
+                true,
               )
+              const snapped = {
+                x: snappedLogical.x * scale + panX,
+                y: snappedLogical.y * scale + panY,
+                width: snappedLogical.width * scale,
+                height: snappedLogical.height * scale,
+              }
               pendingGroupGuidesRef.current = guides
               return { ...snapped, rotation: newBox.rotation }
             }}
