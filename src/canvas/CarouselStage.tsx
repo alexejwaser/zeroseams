@@ -69,6 +69,7 @@ export function CarouselStage(): React.ReactElement {
   const groupTransformerRef = useRef<Konva.Transformer>(null)
   const nodeRefMapRef = useRef<Map<string, React.RefObject<Konva.Node>>>(new Map())
   const syncRefMapRef = useRef<Map<string, React.MutableRefObject<(() => void) | null>>>(new Map())
+  const syncGroupRefMapRef = useRef<Map<string, React.MutableRefObject<(() => void) | null>>>(new Map())
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const marqueeStartRef = useRef<{ x: number; y: number } | null>(null)
   const marqueeCurrentRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -88,6 +89,12 @@ export function CarouselStage(): React.ReactElement {
 
   function getOrCreateSyncRef(id: string): React.MutableRefObject<(() => void) | null> {
     const map = syncRefMapRef.current
+    if (!map.has(id)) map.set(id, { current: null })
+    return map.get(id)!
+  }
+
+  function getOrCreateSyncGroupRef(id: string): React.MutableRefObject<(() => void) | null> {
+    const map = syncGroupRefMapRef.current
     if (!map.has(id)) map.set(id, { current: null })
     return map.get(id)!
   }
@@ -308,6 +315,9 @@ export function CarouselStage(): React.ReactElement {
     for (const id of syncRefMapRef.current.keys()) {
       if (!currentIds.has(id)) syncRefMapRef.current.delete(id)
     }
+    for (const id of syncGroupRefMapRef.current.keys()) {
+      if (!currentIds.has(id)) syncGroupRefMapRef.current.delete(id)
+    }
   }, [objectOrder])
 
   function getObjectBBoxForMarquee(obj: CanvasObject): { x: number; y: number; width: number; height: number } {
@@ -331,6 +341,9 @@ export function CarouselStage(): React.ReactElement {
   function handleGroupTransformEnd(): void {
     const tr = groupTransformerRef.current
     if (!tr) return
+    // Detach immediately so the transformer cannot adjust node positions in response
+    // to scale-baking or to React re-rendering updated width/height props.
+    tr.nodes([])
     const patches: Record<string, Partial<CanvasObject>> = {}
     const currentSelectedIds = useCanvasStore.getState().selectedIds
     const currentObjects = useCanvasStore.getState().objects
@@ -389,7 +402,7 @@ export function CarouselStage(): React.ReactElement {
       }
     }
     commitMultipleUpdates(patches)
-    setGroupTransformKey(k => k + 1)
+    requestAnimationFrame(() => setGroupTransformKey(k => k + 1))
     setActiveGuides([])
   }
 
@@ -426,13 +439,21 @@ export function CarouselStage(): React.ReactElement {
   // Also emits pending snap guides computed in boundBoxFunc (resize) or computed inline (drag).
   function handleGroupTransformLive(): void {
     const ids = useCanvasStore.getState().selectedIds
-    for (const id of ids) syncRefMapRef.current.get(id)?.current?.()
+    for (const id of ids) {
+      const groupSyncFn = syncGroupRefMapRef.current.get(id)?.current
+      if (groupSyncFn) groupSyncFn()
+      else syncRefMapRef.current.get(id)?.current?.()
+    }
     setActiveGuides(pendingGroupGuidesRef.current)
   }
 
   function handleGroupDragLive(): void {
     const ids = useCanvasStore.getState().selectedIds
-    for (const id of ids) syncRefMapRef.current.get(id)?.current?.()
+    for (const id of ids) {
+      const groupSyncFn = syncGroupRefMapRef.current.get(id)?.current
+      if (groupSyncFn) groupSyncFn()
+      else syncRefMapRef.current.get(id)?.current?.()
+    }
 
     const groupBox = getGroupBBox(ids)
     if (!groupBox) return
@@ -444,7 +465,11 @@ export function CarouselStage(): React.ReactElement {
         const node = nodeRefMapRef.current.get(id)?.current
         if (node) { node.x(node.x() + dx); node.y(node.y() + dy) }
       }
-      for (const id of ids) syncRefMapRef.current.get(id)?.current?.()
+      for (const id of ids) {
+        const groupSyncFn = syncGroupRefMapRef.current.get(id)?.current
+        if (groupSyncFn) groupSyncFn()
+        else syncRefMapRef.current.get(id)?.current?.()
+      }
       groupTransformerRef.current?.getLayer()?.batchDraw()
     }
     setActiveGuides(guides)
@@ -1023,6 +1048,7 @@ export function CarouselStage(): React.ReactElement {
                   onGuidesChange={setActiveGuides}
                   nodeRef={getOrCreateNodeRef(id)}
                   syncRef={getOrCreateSyncRef(id)}
+                  syncGroupRef={getOrCreateSyncGroupRef(id)}
                 />
               )
             }

@@ -15,9 +15,10 @@ interface CanvasImageNodeProps {
   onGuidesChange: (guides: SnapGuide[]) => void
   nodeRef?: React.RefObject<Konva.Node>
   syncRef?: React.MutableRefObject<(() => void) | null>
+  syncGroupRef?: React.MutableRefObject<(() => void) | null>
 }
 
-export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef, syncRef }: CanvasImageNodeProps): React.ReactElement | null {
+export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef, syncRef, syncGroupRef }: CanvasImageNodeProps): React.ReactElement | null {
   const [loadedImage] = useImage(obj.src)
 
   // Hold the last successfully loaded HTMLImageElement so the component never
@@ -145,6 +146,9 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
     if (syncRef) {
       syncRef.current = syncGroupOnTransform
     }
+    if (syncGroupRef) {
+      syncGroupRef.current = () => syncGroupOnTransform(true)
+    }
   })
 
   useEffect(() => {
@@ -214,7 +218,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   // fixed in canvas space. During pure rotation, no compensation is needed.
   // NOTE: does not call onGuidesChange — guides are emitted by the onTransform
   // handler after this runs, from pendingGuidesRef set by boundBoxFunc.
-  function syncGroupOnTransform(): void {
+  function syncGroupOnTransform(isGroupTransform = false): void {
     const rect = frameRectRef.current
     const group = groupRef.current
     const img = imageRef.current
@@ -231,7 +235,16 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
     group.clip({ x: 0, y: 0, width: newWidth, height: newHeight })
 
     if (img) {
-      if (cmdHeldRef.current && !isPureRotation) {
+      if (isGroupTransform) {
+        // Group scale: content follows frame proportionally — never crops, ignores resizeMode
+        const scaleX = newWidth / obj.frameWidth
+        const scaleY = newHeight / obj.frameHeight
+        if (inner) { inner.x(0); inner.y(0) }
+        img.x(obj.contentOffsetX * scaleX)
+        img.y(obj.contentOffsetY * scaleY)
+        img.width(obj.contentWidth * scaleX)
+        img.height(obj.contentHeight * scaleY)
+      } else if (cmdHeldRef.current && !isPureRotation) {
         // CMD+SHIFT: scale content proportionally alongside the frame (live preview).
         if (inner) { inner.x(0); inner.y(0) }
         const scaleX = newWidth / obj.frameWidth
@@ -591,8 +604,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
       )}
 
       {/* Invisible frame rect — sole interaction/transform target in frame mode.
-          keepRatio=false lets the user resize freely; holding Shift toggles
-          keepRatio to true via Konva's native XOR behaviour. */}
+          keepRatio=true makes proportional resize the default; holding Shift toggles
+          to free stretch via Konva's native XOR behaviour. */}
       <Rect
         ref={frameRectRef}
         x={obj.frameX}
@@ -642,6 +655,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
         onDragMove={handleFrameDragMove}
         onDragEnd={handleFrameDragEnd}
         onTransform={() => {
+          // Group transformer drives sync via syncGroupRef during multi-select; skip single-object path.
+          if (isInMultiSelectMode) return
           syncGroupOnTransform()
           onGuidesChange(pendingGuidesRef.current)
         }}
@@ -656,7 +671,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
 
       <Transformer
         ref={transformerRef}
-        keepRatio={false}
+        keepRatio={true}
         rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
         rotationSnapTolerance={8}
         boundBoxFunc={(oldBox, newBox) => {

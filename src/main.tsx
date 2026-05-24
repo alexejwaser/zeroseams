@@ -54,6 +54,10 @@ function App(): React.ReactElement {
   )
 }
 
+// Expose stores for Playwright tests (Electron is always a trusted desktop env)
+import('./canvas/useCanvasStore').then(m => { (window as any).__canvasStore__ = m.useCanvasStore })
+import('./canvas/useViewportStore').then(m => { (window as any).__viewportStore__ = m.useViewportStore })
+
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Root element not found')
 ReactDOM.createRoot(rootEl).render(
