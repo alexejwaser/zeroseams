@@ -7,24 +7,12 @@ import type { FrameRatio } from '@/types/project'
 import type { Platform } from '@/types/project'
 import type { CarouselProject } from '@/types/project'
 import type { ShapeKind } from '@/types/canvas'
+import {
+  MousePointer2, Type, Square, Circle, Minus, PenTool,
+  Undo2, Redo2, FolderOpen, Save, ImageDown,
+} from 'lucide-react'
 
 type ActiveTool = 'select' | 'text' | 'shape' | 'pen'
-
-const TOOL_LABELS: Record<ActiveTool, string> = {
-  select: 'Select',
-  text: 'Text',
-  shape: 'Shape',
-  pen: 'Pen',
-}
-
-const TOOLS: ActiveTool[] = ['select', 'text', 'shape', 'pen']
-
-// Pen icon SVG for Pen tool button
-const PEN_ICON = (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ display: 'block' }}>
-    <path d="M9 1L11 3L4 10L1 11L2 8L9 1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-  </svg>
-)
 
 const CROP_ICON = (
   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -283,18 +271,19 @@ export function Toolbar(): React.ReactElement {
   const undoDisabled = past.length === 0
   const redoDisabled = future.length === 0
 
-  const historyButtonStyle = (disabled: boolean): React.CSSProperties => ({
-    padding: '4px 14px',
+  const iconBtnStyle = (active = false, disabled = false): React.CSSProperties => ({
+    width: 30,
     height: 30,
-    background: '#333',
+    background: active ? '#0af' : '#333',
     color: '#fff',
     border: 'none',
     borderRadius: 4,
     cursor: disabled ? 'default' : 'pointer',
-    fontSize: 13,
-    fontWeight: 'normal',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     opacity: disabled ? 0.35 : 1,
-    transition: 'opacity 0.15s',
+    transition: 'background 0.15s',
   })
 
   const segmentButtonStyle = (active: boolean): React.CSSProperties => ({
@@ -332,7 +321,7 @@ export function Toolbar(): React.ReactElement {
         display: 'flex',
         alignItems: 'center',
         width: '100%',
-        height: 48,
+        height: 40,
         background: '#2a2a2a',
         borderBottom: '1px solid #333',
         flexShrink: 0,
@@ -358,20 +347,23 @@ export function Toolbar(): React.ReactElement {
         <button
           onClick={() => { void handleOpen() }}
           disabled={loadingProject}
+          title="Open project"
           style={{
-            padding: '4px 10px',
+            width: 30,
             height: 30,
             background: '#333',
-            color: loadingProject ? '#777' : '#fff',
+            color: loadingProject ? '#555' : '#fff',
             border: 'none',
             borderRadius: '4px 0 0 4px',
             cursor: loadingProject ? 'default' : 'pointer',
-            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: loadingProject ? 0.5 : 1,
             borderRight: '1px solid #555',
-            whiteSpace: 'nowrap' as const,
           }}
         >
-          {loadingProject ? 'Opening…' : 'Open'}
+          <FolderOpen size={15} />
         </button>
         <button
           onClick={() => { void handleRecentToggle() }}
@@ -452,6 +444,7 @@ export function Toolbar(): React.ReactElement {
                 .catch((err: unknown) => console.error('[ZeroSeams] Save failed:', err))
             }
           }}
+          title="Save project (⌘S)"
           style={{
             padding: '4px 10px',
             height: 30,
@@ -463,8 +456,11 @@ export function Toolbar(): React.ReactElement {
             cursor: 'pointer',
             fontSize: 13,
             whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
           }}
         >
+          <Save size={14} style={{ marginRight: 5 }} />
           Save
         </button>
         <button
@@ -549,47 +545,54 @@ export function Toolbar(): React.ReactElement {
           gap: 4,
         }}
       >
-        <button
-          onClick={undo}
-          disabled={undoDisabled}
-          style={historyButtonStyle(undoDisabled)}
-        >
-          ↩ Undo
+        <button onClick={undo} disabled={undoDisabled} title="Undo (⌘Z)" style={iconBtnStyle(false, undoDisabled)}>
+          <Undo2 size={15} />
         </button>
-        <button
-          onClick={redo}
-          disabled={redoDisabled}
-          style={historyButtonStyle(redoDisabled)}
-        >
-          ↪ Redo
+        <button onClick={redo} disabled={redoDisabled} title="Redo (⌘⇧Z)" style={iconBtnStyle(false, redoDisabled)}>
+          <Redo2 size={15} />
         </button>
 
         <div style={{ width: 8 }} />
 
-        {TOOLS.map((tool) => (
-          <button
-            key={tool}
-            onClick={() => handleToolClick(tool)}
-            style={{
-              padding: '4px 14px',
-              height: 30,
-              background: activeTool === tool ? '#0af' : '#333',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: activeTool === tool ? 'bold' : 'normal',
-              transition: 'background 0.15s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: tool === 'pen' ? 5 : 0,
-            }}
-          >
-            {tool === 'pen' && PEN_ICON}
-            {TOOL_LABELS[tool]}
-          </button>
-        ))}
+        {/* Select */}
+        <button
+          onClick={() => handleToolClick('select')}
+          title="Select (V)"
+          style={iconBtnStyle(activeTool === 'select')}
+        >
+          <MousePointer2 size={15} />
+        </button>
+
+        {/* Text */}
+        <button
+          onClick={() => handleToolClick('text')}
+          title="Text (T)"
+          style={iconBtnStyle(activeTool === 'text')}
+        >
+          <Type size={15} />
+        </button>
+
+        {/* Shape — icon reflects active sub-type */}
+        <button
+          onClick={() => handleToolClick('shape')}
+          title="Shape (R)"
+          style={iconBtnStyle(activeTool === 'shape')}
+        >
+          {activeShapeKind === 'ellipse'
+            ? <Circle size={15} />
+            : activeShapeKind === 'line'
+            ? <Minus size={15} />
+            : <Square size={15} />}
+        </button>
+
+        {/* Pen */}
+        <button
+          onClick={() => handleToolClick('pen')}
+          title="Pen (P)"
+          style={iconBtnStyle(activeTool === 'pen')}
+        >
+          <PenTool size={15} />
+        </button>
 
         {activeTool === 'shape' && (
           <div
@@ -670,6 +673,7 @@ export function Toolbar(): React.ReactElement {
         <select
           value={platform}
           onChange={(e) => { setPlatform(e.target.value as Platform) }}
+          title="Platform"
           style={{
             height: 28,
             background: '#222',
@@ -754,6 +758,7 @@ export function Toolbar(): React.ReactElement {
         <button
           onClick={handleMinus}
           disabled={frameCount <= 1}
+          title="Remove frame"
           style={{
             width: 24,
             height: 24,
@@ -785,6 +790,7 @@ export function Toolbar(): React.ReactElement {
         <button
           onClick={handlePlus}
           disabled={frameCount >= 10}
+          title="Add frame"
           style={{
             width: 24,
             height: 24,
@@ -809,8 +815,9 @@ export function Toolbar(): React.ReactElement {
         <div ref={exportWrapperRef} style={{ position: 'relative' }}>
           <button
             onClick={() => { setExportOpen((v) => !v) }}
+            title="Export frames"
             style={{
-              padding: '4px 14px',
+              padding: '4px 10px',
               height: 30,
               background: exportOpen ? '#0af' : '#333',
               color: '#fff',
@@ -818,11 +825,14 @@ export function Toolbar(): React.ReactElement {
               borderRadius: 4,
               cursor: 'pointer',
               fontSize: 13,
-              fontWeight: 'normal',
               transition: 'background 0.15s',
               whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
             }}
           >
+            <ImageDown size={14} />
             Export
           </button>
 
