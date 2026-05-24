@@ -57,6 +57,8 @@ export function CarouselStage(): React.ReactElement {
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const activeShapeKind = useCanvasStore((s) => s.activeShapeKind)
   const snapEnabled = useCanvasStore((s) => s.snapEnabled)
+  const maskModeActive = useCanvasStore((s) => s.maskModeActive)
+  const enterMaskDrawMode = useCanvasStore((s) => s.enterMaskDrawMode)
 
   // Viewport store
   const zoom = useViewportStore((s) => s.zoom)
@@ -285,7 +287,8 @@ export function CarouselStage(): React.ReactElement {
 
   function commitMaskDraw(anchors: AnchorPoint[]): void {
     if (!maskDrawMode) return
-    commitUpdate(maskDrawMode.id, { mask: { anchors, feather: 0, inverted: false, visible: true } } as Partial<CanvasObject>)
+    const kind = maskDrawMode.tool
+    commitUpdate(maskDrawMode.id, { mask: { anchors, feather: 0, inverted: false, visible: true, kind } } as Partial<CanvasObject>)
     clearMaskDrawMode()
   }
 
@@ -575,6 +578,10 @@ export function CarouselStage(): React.ReactElement {
 
           // --- Pen tool ---
           if (activeTool === 'pen') {
+            if (maskModeActive && selectedId && objects[selectedId]?.type === 'image') {
+              enterMaskDrawMode(selectedId, 'pen')
+              return
+            }
             if (e.target !== e.target.getStage()) return
             const stage = e.target.getStage()
             if (!stage) return
@@ -607,6 +614,19 @@ export function CarouselStage(): React.ReactElement {
                 multiSelectDragActiveRef.current = false
               }
             }
+          }
+
+          // Shape tool mask interception — must be before the stage-click gate so clicks
+          // on the selected image are captured even though e.target !== stage.
+          if (activeTool === 'shape' && maskModeActive && selectedId && objects[selectedId]?.type === 'image' &&
+              (activeShapeKind === 'rect' || activeShapeKind === 'ellipse')) {
+            const stage = e.target.getStage()
+            const pos = stage?.getRelativePointerPosition()
+            if (pos) {
+              enterMaskDrawMode(selectedId, activeShapeKind as 'rect' | 'ellipse')
+              maskDrawStartRef.current = { x: pos.x, y: pos.y }
+            }
+            return
           }
 
           if (e.target !== e.target.getStage()) return
@@ -1242,12 +1262,12 @@ export function CarouselStage(): React.ReactElement {
                   {isDragging && <>
                     <KonvaLine points={[ghostX - drag!.dx, ghostY - drag!.dy, ghostX + drag!.dx, ghostY + drag!.dy]}
                       stroke="#0096ff" strokeWidth={1} strokeScaleEnabled={false} dash={[3, 2]} listening={false} />
-                    <KonvaCircle x={ghostX - drag!.dx} y={ghostY - drag!.dy} radius={3} fill="#fff" stroke="#0096ff" strokeWidth={1.5} listening={false} />
-                    <KonvaCircle x={ghostX + drag!.dx} y={ghostY + drag!.dy} radius={3} fill="#fff" stroke="#0096ff" strokeWidth={1.5} listening={false} />
+                    <KonvaCircle x={ghostX - drag!.dx} y={ghostY - drag!.dy} radius={6} fill="#fff" stroke="#0096ff" strokeWidth={1.5} listening={false} />
+                    <KonvaCircle x={ghostX + drag!.dx} y={ghostY + drag!.dy} radius={6} fill="#fff" stroke="#0096ff" strokeWidth={1.5} listening={false} />
                   </>}
                   {maskPenAnchors.map((a, i) => (
                     <KonvaCircle key={i} x={a.x} y={a.y}
-                      radius={i === 0 && maskPenAnchors.length >= 3 ? 7 : 5}
+                      radius={7}
                       fill={i === 0 && isNearFirst ? '#ff4488' : '#0af'}
                       stroke="#fff" strokeWidth={1.5} listening={false} />
                   ))}

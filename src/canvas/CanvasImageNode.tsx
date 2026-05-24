@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useMemo } from 'react'
 import { Group, Image as KonvaImage, Rect, Transformer, Shape, Circle, Line } from 'react-konva'
 import useImage from 'use-image'
 import type Konva from 'konva'
-import type { ImageObject } from '@/types/canvas'
+import type { ImageObject, AnchorPoint } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
@@ -39,6 +39,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const innerGroupRef = useRef<Konva.Group>(null)
   const imageRef = useRef<Konva.Image>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
+  const maskEditRectRef = useRef<Konva.Rect>(null)
+  const maskEditTransformerRef = useRef<Konva.Transformer>(null)
   // Tracks CMD key only — SHIFT is handled natively by Konva Transformer:
   // with keepRatio=false as base, holding Shift toggles it to true automatically.
   const cmdHeldRef = useRef(false)
@@ -59,6 +61,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const maskDrawMode = useCanvasStore((s) => s.maskDrawMode)
   const isDrawTarget = maskDrawMode?.id === obj.id
+  const maskModeActive = useCanvasStore((s) => s.maskModeActive)
+  const activeTool = useCanvasStore((s) => s.activeTool)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
   const anchorId = useCanvasStore((s) => s.anchorId)
   const setAnchor = useCanvasStore((s) => s.setAnchor)
@@ -138,7 +142,18 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
       inner.clearCache()
       inner.getLayer()?.batchDraw()
     }
-  }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight, obj.src])
+  }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight, obj.src, loadedImage])
+
+  // Wire the mask-edit Transformer to its target Rect when entering edit mode for rect/ellipse masks.
+  useEffect(() => {
+    const kind = obj.mask?.kind
+    if (!obj.maskEditMode || (kind !== 'rect' && kind !== 'ellipse')) return
+    const r = maskEditRectRef.current
+    const tr = maskEditTransformerRef.current
+    if (!r || !tr) return
+    tr.nodes([r])
+    tr.getLayer()?.batchDraw()
+  }, [obj.maskEditMode, obj.mask?.kind, obj.mask?.anchors])
 
   // Sync nodeRef to frameRectRef so the group transformer uses frame bounds (not content extent).
   // Also expose syncGroupOnTransform so CarouselStage can drive live visual sync during group transforms.
@@ -518,93 +533,195 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
         </Group>
       </Group>
 
-      {/* Mask anchor overlay — shadow group with same position/rotation but no clip */}
-      {obj.maskEditMode && obj.mask && (
-        <Group x={obj.frameX} y={obj.frameY} rotation={obj.rotation} listening={true}>
-          {obj.mask.anchors.map((anchor, i) => {
-            const ax = obj.contentOffsetX + anchor.x
-            const ay = obj.contentOffsetY + anchor.y
-            const hix = ax + anchor.handleIn.dx
-            const hiy = ay + anchor.handleIn.dy
-            const hox = ax + anchor.handleOut.dx
-            const hoy = ay + anchor.handleOut.dy
-            const hasHandleIn = anchor.handleIn.dx !== 0 || anchor.handleIn.dy !== 0
-            const hasHandleOut = anchor.handleOut.dx !== 0 || anchor.handleOut.dy !== 0
-            const mask = obj.mask!
-            return (
-              <React.Fragment key={i}>
-                {hasHandleIn && (
-                  <>
-                    <Line points={[ax, ay, hix, hiy]} stroke="#0096ff" strokeWidth={1} listening={false} />
-                    <Circle
-                      x={hix} y={hiy} radius={4}
-                      fill="#fff" stroke="#0096ff" strokeWidth={1}
-                      draggable
-                      onDragMove={(e) => {
-                        const n = e.target as Konva.Circle
-                        const newAnchors = mask.anchors.map((a, j) =>
-                          j === i ? { ...a, handleIn: { dx: n.x() - ax, dy: n.y() - ay } } : a
+      {/* Mask edit overlay — Transformer-based for rect/ellipse, anchor circles for pen */}
+      {obj.maskEditMode && obj.mask && (() => {
+        const mask = obj.mask!
+        const kind = mask.kind
+
+        if (kind === 'rect' || kind === 'ellipse') {
+          const axs = mask.anchors.map(a => a.x + obj.contentOffsetX)
+          const ays = mask.anchors.map(a => a.y + obj.contentOffsetY)
+          const bboxX = Math.min(...axs)
+          const bboxY = Math.min(...ays)
+          const bboxW = Math.max(...axs) - bboxX
+          const bboxH = Math.max(...ays) - bboxY
+          return (
+            <Group x={obj.frameX} y={obj.frameY} rotation={obj.rotation} listening={true}>
+              <Rect
+                ref={maskEditRectRef}
+                x={bboxX} y={bboxY}
+                width={bboxW} height={bboxH}
+                fill="transparent"
+                stroke="#0096ff" strokeWidth={1}
+                strokeScaleEnabled={false}
+                dash={[4, 3]}
+                draggable
+                onDragEnd={() => {
+                  const r = maskEditRectRef.current!
+                  const dx = r.x() - bboxX
+                  const dy = r.y() - bboxY
+                  const newAnchors = mask.anchors.map(a => ({ ...a, x: a.x + dx, y: a.y + dy }))
+                  r.position({ x: bboxX, y: bboxY })
+                  commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                }}
+                onTransformEnd={() => {
+                  const r = maskEditRectRef.current!
+                  const sx = r.scaleX(); const sy = r.scaleY()
+                  const rw = bboxW * sx; const rh = bboxH * sy
+                  const x1 = rw >= 0 ? r.x() : r.x() + rw
+                  const y1 = rh >= 0 ? r.y() : r.y() + rh
+                  const x2 = rw >= 0 ? r.x() + rw : r.x()
+                  const y2 = rh >= 0 ? r.y() + rh : r.y()
+                  r.scaleX(1); r.scaleY(1)
+                  r.x(x1); r.y(y1); r.width(x2 - x1); r.height(y2 - y1)
+                  let newAnchors: AnchorPoint[]
+                  if (kind === 'ellipse') {
+                    const K = 0.5523
+                    const ecx = (x1 + x2) / 2 - obj.contentOffsetX
+                    const ecy = (y1 + y2) / 2 - obj.contentOffsetY
+                    const erx = (x2 - x1) / 2
+                    const ery = (y2 - y1) / 2
+                    newAnchors = [
+                      { x: ecx,       y: ecy - ery, handleIn: { dx: -K*erx, dy: 0 },  handleOut: { dx: K*erx, dy: 0 } },
+                      { x: ecx + erx, y: ecy,       handleIn: { dx: 0, dy: -K*ery },  handleOut: { dx: 0, dy: K*ery } },
+                      { x: ecx,       y: ecy + ery, handleIn: { dx: K*erx,  dy: 0 },  handleOut: { dx: -K*erx, dy: 0 } },
+                      { x: ecx - erx, y: ecy,       handleIn: { dx: 0, dy: K*ery },   handleOut: { dx: 0, dy: -K*ery } },
+                    ]
+                  } else {
+                    newAnchors = [
+                      { x: x1 - obj.contentOffsetX, y: y1 - obj.contentOffsetY, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } },
+                      { x: x2 - obj.contentOffsetX, y: y1 - obj.contentOffsetY, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } },
+                      { x: x2 - obj.contentOffsetX, y: y2 - obj.contentOffsetY, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } },
+                      { x: x1 - obj.contentOffsetX, y: y2 - obj.contentOffsetY, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } },
+                    ]
+                  }
+                  commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                }}
+              />
+              <Transformer
+                ref={maskEditTransformerRef}
+                rotateEnabled={false}
+                keepRatio={false}
+                boundBoxFunc={(oldBox, newBox) => (newBox.width < 5 || newBox.height < 5 ? oldBox : newBox)}
+              />
+            </Group>
+          )
+        }
+
+        // pen (or legacy masks without a kind): individual anchor circles
+        return (
+          <Group x={obj.frameX} y={obj.frameY} rotation={obj.rotation} listening={true}>
+            {mask.anchors.map((anchor, i) => {
+              const ax = obj.contentOffsetX + anchor.x
+              const ay = obj.contentOffsetY + anchor.y
+              const hix = ax + anchor.handleIn.dx
+              const hiy = ay + anchor.handleIn.dy
+              const hox = ax + anchor.handleOut.dx
+              const hoy = ay + anchor.handleOut.dy
+              const hasHandleIn = anchor.handleIn.dx !== 0 || anchor.handleIn.dy !== 0
+              const hasHandleOut = anchor.handleOut.dx !== 0 || anchor.handleOut.dy !== 0
+              return (
+                <React.Fragment key={i}>
+                  {hasHandleIn && (
+                    <>
+                      <Line points={[ax, ay, hix, hiy]} stroke="#0096ff" strokeWidth={1} listening={false} />
+                      <Circle
+                        x={hix} y={hiy} radius={6}
+                        fill="#fff" stroke="#0096ff" strokeWidth={1}
+                        draggable
+                        onDragMove={(e) => {
+                          const n = e.target as Konva.Circle
+                          const newAnchors = mask.anchors.map((a, j) =>
+                            j === i ? { ...a, handleIn: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                          )
+                          updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                        }}
+                        onDragEnd={(e) => {
+                          const n = e.target as Konva.Circle
+                          const newAnchors = mask.anchors.map((a, j) =>
+                            j === i ? { ...a, handleIn: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                          )
+                          commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                        }}
+                      />
+                    </>
+                  )}
+                  {hasHandleOut && (
+                    <>
+                      <Line points={[ax, ay, hox, hoy]} stroke="#0096ff" strokeWidth={1} listening={false} />
+                      <Circle
+                        x={hox} y={hoy} radius={6}
+                        fill="#fff" stroke="#0096ff" strokeWidth={1}
+                        draggable
+                        onDragMove={(e) => {
+                          const n = e.target as Konva.Circle
+                          const newAnchors = mask.anchors.map((a, j) =>
+                            j === i ? { ...a, handleOut: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                          )
+                          updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                        }}
+                        onDragEnd={(e) => {
+                          const n = e.target as Konva.Circle
+                          const newAnchors = mask.anchors.map((a, j) =>
+                            j === i ? { ...a, handleOut: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                          )
+                          commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                        }}
+                      />
+                    </>
+                  )}
+                  <Circle
+                    x={ax} y={ay} radius={7}
+                    fill="#0096ff" stroke="#fff" strokeWidth={1.5}
+                    draggable
+                    onDragMove={(e) => {
+                      const n = e.target as Konva.Circle
+                      const newAnchors = mask.anchors.map((a, j) =>
+                        j === i ? { ...a, x: n.x() - obj.contentOffsetX, y: n.y() - obj.contentOffsetY } : a
+                      )
+                      updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                    }}
+                    onDragEnd={(e) => {
+                      const n = e.target as Konva.Circle
+                      const newAnchors = mask.anchors.map((a, j) =>
+                        j === i ? { ...a, x: n.x() - obj.contentOffsetX, y: n.y() - obj.contentOffsetY } : a
+                      )
+                      commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                    }}
+                    onDblClick={() => {
+                      const hasHandles =
+                        anchor.handleIn.dx !== 0 || anchor.handleIn.dy !== 0 ||
+                        anchor.handleOut.dx !== 0 || anchor.handleOut.dy !== 0
+                      let newAnchors: AnchorPoint[]
+                      if (hasHandles) {
+                        newAnchors = mask.anchors.map((a, j) =>
+                          j === i ? { ...a, handleIn: { dx: 0, dy: 0 }, handleOut: { dx: 0, dy: 0 } } : a
                         )
-                        updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
-                      }}
-                      onDragEnd={(e) => {
-                        const n = e.target as Konva.Circle
-                        const newAnchors = mask.anchors.map((a, j) =>
-                          j === i ? { ...a, handleIn: { dx: n.x() - ax, dy: n.y() - ay } } : a
+                      } else {
+                        const total = mask.anchors.length
+                        const prevIdx = (i - 1 + total) % total
+                        const nextIdx = (i + 1) % total
+                        const prev = mask.anchors[prevIdx]
+                        const next = mask.anchors[nextIdx]
+                        const tx = next.x - prev.x
+                        const ty = next.y - prev.y
+                        const len = Math.sqrt(tx * tx + ty * ty)
+                        const HANDLE_LEN = 30
+                        const hdx = len > 0.001 ? (tx / len) * HANDLE_LEN : HANDLE_LEN
+                        const hdy = len > 0.001 ? (ty / len) * HANDLE_LEN : 0
+                        newAnchors = mask.anchors.map((a, j) =>
+                          j === i ? { ...a, handleOut: { dx: hdx, dy: hdy }, handleIn: { dx: -hdx, dy: -hdy } } : a
                         )
-                        commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
-                      }}
-                    />
-                  </>
-                )}
-                {hasHandleOut && (
-                  <>
-                    <Line points={[ax, ay, hox, hoy]} stroke="#0096ff" strokeWidth={1} listening={false} />
-                    <Circle
-                      x={hox} y={hoy} radius={4}
-                      fill="#fff" stroke="#0096ff" strokeWidth={1}
-                      draggable
-                      onDragMove={(e) => {
-                        const n = e.target as Konva.Circle
-                        const newAnchors = mask.anchors.map((a, j) =>
-                          j === i ? { ...a, handleOut: { dx: n.x() - ax, dy: n.y() - ay } } : a
-                        )
-                        updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
-                      }}
-                      onDragEnd={(e) => {
-                        const n = e.target as Konva.Circle
-                        const newAnchors = mask.anchors.map((a, j) =>
-                          j === i ? { ...a, handleOut: { dx: n.x() - ax, dy: n.y() - ay } } : a
-                        )
-                        commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
-                      }}
-                    />
-                  </>
-                )}
-                <Circle
-                  x={ax} y={ay} radius={5}
-                  fill="#0096ff" stroke="#fff" strokeWidth={1.5}
-                  draggable
-                  onDragMove={(e) => {
-                    const n = e.target as Konva.Circle
-                    const newAnchors = mask.anchors.map((a, j) =>
-                      j === i ? { ...a, x: n.x() - obj.contentOffsetX, y: n.y() - obj.contentOffsetY } : a
-                    )
-                    updateObject(obj.id, { mask: { ...mask, anchors: newAnchors } })
-                  }}
-                  onDragEnd={(e) => {
-                    const n = e.target as Konva.Circle
-                    const newAnchors = mask.anchors.map((a, j) =>
-                      j === i ? { ...a, x: n.x() - obj.contentOffsetX, y: n.y() - obj.contentOffsetY } : a
-                    )
-                    commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
-                  }}
-                />
-              </React.Fragment>
-            )
-          })}
-        </Group>
-      )}
+                      }
+                      commitUpdate(obj.id, { mask: { ...mask, anchors: newAnchors } })
+                    }}
+                  />
+                </React.Fragment>
+              )
+            })}
+          </Group>
+        )
+      })()}
 
       {/* Invisible frame rect — sole interaction/transform target in frame mode.
           keepRatio=true makes proportional resize the default; holding Shift toggles
@@ -622,7 +739,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
         strokeEnabled={obj.contentEditMode || isInMultiSelect}
         strokeScaleEnabled={false}
         perfectDrawEnabled={false}
-        draggable={!obj.locked && !obj.contentEditMode && !obj.maskEditMode && !isDrawTarget && !isInMultiSelectMode}
+        draggable={!obj.locked && !obj.contentEditMode && !obj.maskEditMode && !isDrawTarget && !isInMultiSelectMode && !(maskModeActive && isSelected && (activeTool === 'shape' || activeTool === 'pen'))}
         listening={!obj.contentEditMode && !obj.maskEditMode && !isDrawTarget}
         onMouseDown={(e) => {
           if (isInMultiSelectMode) {

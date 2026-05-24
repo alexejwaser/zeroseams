@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react'
 import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useThumbnailStore } from '@/canvas/useThumbnailStore'
 import type { CanvasObject, CanvasObjectType, ImageObject } from '@/types/canvas'
+import Tooltip from './Tooltip'
 
 function typeLabel(type: CanvasObjectType): string {
   switch (type) {
@@ -229,65 +230,68 @@ export function LayerPanel(): React.ReactElement {
 
               {/* Anchor button — visible only in multi-select mode */}
               {canBeAnchor && (
+                <Tooltip label="Set as reference">
+                  <button
+                    draggable={false}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setAnchor(isAnchor ? null : id)
+                    }}
+                    style={{
+                      flexShrink: 0,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '0 2px',
+                      fontSize: 12,
+                      lineHeight: '1',
+                      color: isAnchor ? '#f5a623' : '#666',
+                    }}
+                  >
+                    ★
+                  </button>
+                </Tooltip>
+              )}
+
+              {/* Lock toggle */}
+              <Tooltip label={obj.locked ? 'Unlock' : 'Lock'}>
                 <button
                   draggable={false}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setAnchor(isAnchor ? null : id)
-                  }}
-                  title={isAnchor ? 'Clear reference object' : 'Set as reference object'}
+                  onClick={(e) => handleLockClick(e, id)}
                   style={{
                     flexShrink: 0,
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
                     padding: '0 2px',
-                    fontSize: 12,
+                    fontSize: 13,
                     lineHeight: '1',
-                    color: isAnchor ? '#f5a623' : '#666',
+                    opacity: obj.locked ? 1 : 0.3,
                   }}
                 >
-                  ★
+                  {obj.locked ? '🔒' : '🔓'}
                 </button>
-              )}
-
-              {/* Lock toggle */}
-              <button
-                draggable={false}
-                onClick={(e) => handleLockClick(e, id)}
-                title={obj.locked ? 'Unlock layer' : 'Lock layer'}
-                style={{
-                  flexShrink: 0,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0 2px',
-                  fontSize: 13,
-                  lineHeight: '1',
-                  opacity: obj.locked ? 1 : 0.3,
-                }}
-              >
-                {obj.locked ? '🔒' : '🔓'}
-              </button>
+              </Tooltip>
 
               {/* Eye toggle */}
-              <button
-                draggable={false}
-                onClick={(e) => handleEyeClick(e, obj)}
-                title={obj.visible ? 'Hide layer' : 'Show layer'}
-                style={{
-                  flexShrink: 0,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0 2px',
-                  fontSize: 14,
-                  lineHeight: '1',
-                  opacity: 0.7,
-                }}
-              >
-                {obj.visible ? '👁' : '🚫'}
-              </button>
+              <Tooltip label={obj.visible ? 'Hide layer' : 'Show layer'}>
+                <button
+                  draggable={false}
+                  onClick={(e) => handleEyeClick(e, obj)}
+                  style={{
+                    flexShrink: 0,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '0 2px',
+                    fontSize: 14,
+                    lineHeight: '1',
+                    opacity: 0.7,
+                  }}
+                >
+                  {obj.visible ? '👁' : '🚫'}
+                </button>
+              </Tooltip>
             </div>
           )
         })}

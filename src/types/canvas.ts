@@ -84,6 +84,8 @@ export interface MaskData {
   inverted: boolean
   /** Toggle mask on/off without deleting it */
   visible: boolean
+  /** How the mask was drawn — determines edit UI (rect/ellipse → Transformer; pen → anchor circles) */
+  kind?: 'pen' | 'rect' | 'ellipse'
 }
 
 export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold italic'

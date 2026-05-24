@@ -113,6 +113,9 @@ interface CanvasState {
   maskDrawMode: { id: string; tool: 'pen' | 'rect' | 'ellipse' } | null
   enterMaskDrawMode: (id: string, tool: 'pen' | 'rect' | 'ellipse') => void
   clearMaskDrawMode: () => void
+  /** Transient flag — true when the selected object is an image (enables mask-draw interception). Not stored in history. */
+  maskModeActive: boolean
+  setMaskModeActive: (v: boolean) => void
   moveObject: (id: string, dx: number, dy: number) => void
   setContextMenu: (state: { x: number; y: number; targetId: string | null } | null) => void
   selectAll: () => void
@@ -197,6 +200,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     textSelection: null,
     captureTextSelection: null,
     maskDrawMode: null,
+    maskModeActive: false,
 
     addObject: (obj) => {
       let normalized = obj
@@ -255,11 +259,12 @@ export const useCanvasStore = create<CanvasState>((set) => {
       }),
 
     setSelected: (id) =>
-      set({
+      set((state) => ({
         selectedId: id,
         selectedIds: id !== null ? [id] : [],
         anchorId: null,
-      }),
+        maskModeActive: id !== null && state.objects[id]?.type === 'image',
+      })),
 
     addToSelection: (id) =>
       set((state) => {
@@ -714,6 +719,8 @@ export const useCanvasStore = create<CanvasState>((set) => {
       }),
 
     clearMaskDrawMode: () => set({ maskDrawMode: null }),
+
+    setMaskModeActive: (v) => set({ maskModeActive: v }),
 
     moveObject: (id, dx, dy) =>
       set((state) => {

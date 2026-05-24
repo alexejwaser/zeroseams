@@ -9,8 +9,10 @@ import type { CarouselProject } from '@/types/project'
 import type { ShapeKind } from '@/types/canvas'
 import {
   MousePointer2, Type, Square, Circle, Minus, PenTool,
-  Undo2, Redo2, FolderOpen, Save, ImageDown,
+  Undo2, Redo2, FolderOpen, Save, ImageDown, Scissors,
 } from 'lucide-react'
+import Tooltip from './Tooltip'
+import { iconBtnStyle } from './iconBtnStyle'
 
 type ActiveTool = 'select' | 'text' | 'shape' | 'pen'
 
@@ -97,6 +99,13 @@ export function Toolbar(): React.ReactElement {
   const projectName = useSaveStatusStore((s) => s.projectName)
   const currentFilePath = useSaveStatusStore((s) => s.currentFilePath)
   const setCurrentFilePath = useSaveStatusStore((s) => s.setCurrentFilePath)
+  const selectedId = useCanvasStore((s) => s.selectedId)
+  const objects = useCanvasStore((s) => s.objects)
+  const setSelected = useCanvasStore((s) => s.setSelected)
+  const maskModeActive = useCanvasStore((s) => s.maskModeActive)
+  const setMaskModeActive = useCanvasStore((s) => s.setMaskModeActive)
+
+  const selectedObj = selectedId != null ? objects[selectedId] : undefined
 
   const [exportOpen, setExportOpen] = useState(false)
   const [exportMode, setExportMode] = useState<'all' | 'single' | 'range'>('all')
@@ -271,21 +280,6 @@ export function Toolbar(): React.ReactElement {
   const undoDisabled = past.length === 0
   const redoDisabled = future.length === 0
 
-  const iconBtnStyle = (active = false, disabled = false): React.CSSProperties => ({
-    width: 30,
-    height: 30,
-    background: active ? '#0af' : '#333',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 4,
-    cursor: disabled ? 'default' : 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: disabled ? 0.35 : 1,
-    transition: 'background 0.15s',
-  })
-
   const segmentButtonStyle = (active: boolean): React.CSSProperties => ({
     padding: '3px 10px',
     height: 24,
@@ -344,43 +338,45 @@ export function Toolbar(): React.ReactElement {
 
       {/* Open button + recent projects */}
       <div ref={recentWrapperRef} style={{ position: 'relative', display: 'flex', marginLeft: 12, flex: '0 0 auto' }}>
-        <button
-          onClick={() => { void handleOpen() }}
-          disabled={loadingProject}
-          title="Open project"
-          style={{
-            width: 30,
-            height: 30,
-            background: '#333',
-            color: loadingProject ? '#555' : '#fff',
-            border: 'none',
-            borderRadius: '4px 0 0 4px',
-            cursor: loadingProject ? 'default' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: loadingProject ? 0.5 : 1,
-            borderRight: '1px solid #555',
-          }}
-        >
-          <FolderOpen size={15} />
-        </button>
-        <button
-          onClick={() => { void handleRecentToggle() }}
-          style={{
-            padding: '4px 6px',
-            height: 30,
-            background: recentOpen ? '#555' : '#333',
-            color: '#aaa',
-            border: 'none',
-            borderRadius: '0 4px 4px 0',
-            cursor: 'pointer',
-            fontSize: 11,
-          }}
-          title="Recent projects"
-        >
-          ▾
-        </button>
+        <Tooltip label="Open" shortcut="⌘O">
+          <button
+            onClick={() => { void handleOpen() }}
+            disabled={loadingProject}
+            style={{
+              width: 30,
+              height: 30,
+              background: '#333',
+              color: loadingProject ? '#555' : '#fff',
+              border: 'none',
+              borderRadius: '4px 0 0 4px',
+              cursor: loadingProject ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: loadingProject ? 0.5 : 1,
+              borderRight: '1px solid #555',
+            }}
+          >
+            <FolderOpen size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip label="Recent projects">
+          <button
+            onClick={() => { void handleRecentToggle() }}
+            style={{
+              padding: '4px 6px',
+              height: 30,
+              background: recentOpen ? '#555' : '#333',
+              color: '#aaa',
+              border: 'none',
+              borderRadius: '0 4px 4px 0',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+          >
+            ▾
+          </button>
+        </Tooltip>
 
         {recentOpen && (
           <div
@@ -427,58 +423,60 @@ export function Toolbar(): React.ReactElement {
 
       {/* Save split-button */}
       <div data-save-menu style={{ position: 'relative', display: 'flex', marginLeft: 6, flex: '0 0 auto' }}>
-        <button
-          onClick={() => {
-            const saveStore = useSaveStatusStore.getState()
-            const json = buildProjectJson()
-            if (saveStore.currentFilePath) {
-              window.electronAPI.saveProject(saveStore.currentFilePath, json)
-                .catch((err: unknown) => console.error('[ZeroSeams] Save failed:', err))
-            } else {
-              window.electronAPI.saveProjectAs(json)
-                .then((result: { success: boolean; filePath?: string; error?: string }) => {
-                  if (result.success && result.filePath) {
-                    useSaveStatusStore.getState().setCurrentFilePath(result.filePath)
-                  }
-                })
-                .catch((err: unknown) => console.error('[ZeroSeams] Save failed:', err))
-            }
-          }}
-          title="Save project (⌘S)"
-          style={{
-            padding: '4px 10px',
-            height: 30,
-            background: '#333',
-            color: '#fff',
-            border: 'none',
-            borderRight: '1px solid #555',
-            borderRadius: '4px 0 0 4px',
-            cursor: 'pointer',
-            fontSize: 13,
-            whiteSpace: 'nowrap',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <Save size={14} style={{ marginRight: 5 }} />
-          Save
-        </button>
-        <button
-          onClick={() => setSaveMenuOpen(v => !v)}
-          style={{
-            padding: '4px 6px',
-            height: 30,
-            background: saveMenuOpen ? '#555' : '#333',
-            color: '#aaa',
-            border: 'none',
-            borderRadius: '0 4px 4px 0',
-            cursor: 'pointer',
-            fontSize: 11,
-          }}
-          title="More save options"
-        >
-          ▾
-        </button>
+        <Tooltip label="Save" shortcut="⌘S">
+          <button
+            onClick={() => {
+              const saveStore = useSaveStatusStore.getState()
+              const json = buildProjectJson()
+              if (saveStore.currentFilePath) {
+                window.electronAPI.saveProject(saveStore.currentFilePath, json)
+                  .catch((err: unknown) => console.error('[ZeroSeams] Save failed:', err))
+              } else {
+                window.electronAPI.saveProjectAs(json)
+                  .then((result: { success: boolean; filePath?: string; error?: string }) => {
+                    if (result.success && result.filePath) {
+                      useSaveStatusStore.getState().setCurrentFilePath(result.filePath)
+                    }
+                  })
+                  .catch((err: unknown) => console.error('[ZeroSeams] Save failed:', err))
+              }
+            }}
+            style={{
+              padding: '4px 10px',
+              height: 30,
+              background: '#333',
+              color: '#fff',
+              border: 'none',
+              borderRight: '1px solid #555',
+              borderRadius: '4px 0 0 4px',
+              cursor: 'pointer',
+              fontSize: 13,
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <Save size={14} style={{ marginRight: 5 }} />
+            Save
+          </button>
+        </Tooltip>
+        <Tooltip label="Save options">
+          <button
+            onClick={() => setSaveMenuOpen(v => !v)}
+            style={{
+              padding: '4px 6px',
+              height: 30,
+              background: saveMenuOpen ? '#555' : '#333',
+              color: '#aaa',
+              border: 'none',
+              borderRadius: '0 4px 4px 0',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+          >
+            ▾
+          </button>
+        </Tooltip>
         {saveMenuOpen && (
           <div style={{
             position: 'absolute',
@@ -545,54 +543,79 @@ export function Toolbar(): React.ReactElement {
           gap: 4,
         }}
       >
-        <button onClick={undo} disabled={undoDisabled} title="Undo (⌘Z)" style={iconBtnStyle(false, undoDisabled)}>
-          <Undo2 size={15} />
-        </button>
-        <button onClick={redo} disabled={redoDisabled} title="Redo (⌘⇧Z)" style={iconBtnStyle(false, redoDisabled)}>
-          <Redo2 size={15} />
-        </button>
+        <Tooltip label="Undo" shortcut="⌘Z">
+          <button onClick={undo} disabled={undoDisabled} style={iconBtnStyle(false, undoDisabled)}>
+            <Undo2 size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip label="Redo" shortcut="⌘⇧Z">
+          <button onClick={redo} disabled={redoDisabled} style={iconBtnStyle(false, redoDisabled)}>
+            <Redo2 size={15} />
+          </button>
+        </Tooltip>
 
         <div style={{ width: 8 }} />
 
         {/* Select */}
-        <button
-          onClick={() => handleToolClick('select')}
-          title="Select (V)"
-          style={iconBtnStyle(activeTool === 'select')}
-        >
-          <MousePointer2 size={15} />
-        </button>
+        <Tooltip label="Select" shortcut="V">
+          <button
+            onClick={() => handleToolClick('select')}
+            style={iconBtnStyle(activeTool === 'select')}
+          >
+            <MousePointer2 size={15} />
+          </button>
+        </Tooltip>
 
         {/* Text */}
-        <button
-          onClick={() => handleToolClick('text')}
-          title="Text (T)"
-          style={iconBtnStyle(activeTool === 'text')}
-        >
-          <Type size={15} />
-        </button>
+        <Tooltip label="Text" shortcut="T">
+          <button
+            onClick={() => handleToolClick('text')}
+            style={iconBtnStyle(activeTool === 'text')}
+          >
+            <Type size={15} />
+          </button>
+        </Tooltip>
+
+        {/* Mask — only visible when an image object is selected */}
+        {selectedObj?.type === 'image' && (
+          <Tooltip label="Mask mode" description="Next stroke becomes a mask">
+            <button
+              style={iconBtnStyle(maskModeActive)}
+              title="Mask mode — next stroke becomes a mask"
+              onClick={() => {
+                setMaskModeActive(false)
+                setSelected(null)
+                setActiveTool('select')
+              }}
+            >
+              <Scissors size={14} />
+            </button>
+          </Tooltip>
+        )}
 
         {/* Shape — icon reflects active sub-type */}
-        <button
-          onClick={() => handleToolClick('shape')}
-          title="Shape (R)"
-          style={iconBtnStyle(activeTool === 'shape')}
-        >
-          {activeShapeKind === 'ellipse'
-            ? <Circle size={15} />
-            : activeShapeKind === 'line'
-            ? <Minus size={15} />
-            : <Square size={15} />}
-        </button>
+        <Tooltip label="Shape" shortcut="R">
+          <button
+            onClick={() => handleToolClick('shape')}
+            style={iconBtnStyle(activeTool === 'shape')}
+          >
+            {activeShapeKind === 'ellipse'
+              ? <Circle size={15} />
+              : activeShapeKind === 'line'
+              ? <Minus size={15} />
+              : <Square size={15} />}
+          </button>
+        </Tooltip>
 
         {/* Pen */}
-        <button
-          onClick={() => handleToolClick('pen')}
-          title="Pen (P)"
-          style={iconBtnStyle(activeTool === 'pen')}
-        >
-          <PenTool size={15} />
-        </button>
+        <Tooltip label="Pen" shortcut="P">
+          <button
+            onClick={() => handleToolClick('pen')}
+            style={iconBtnStyle(activeTool === 'pen')}
+          >
+            <PenTool size={15} />
+          </button>
+        </Tooltip>
 
         {activeTool === 'shape' && (
           <div
@@ -608,14 +631,17 @@ export function Toolbar(): React.ReactElement {
             }}
           >
             {(['rect', 'ellipse', 'line'] as ShapeKind[]).map((kind) => (
-              <button
+              <Tooltip
                 key={kind}
-                onClick={() => { setActiveShapeKind(kind) }}
-                title={kind}
-                style={segmentButtonStyle(activeShapeKind === kind)}
+                label={kind === 'rect' ? 'Rectangle' : kind === 'ellipse' ? 'Ellipse' : 'Line'}
               >
-                {kind === 'rect' ? '▭' : kind === 'ellipse' ? '⬭' : '╱'}
-              </button>
+                <button
+                  onClick={() => { setActiveShapeKind(kind) }}
+                  style={segmentButtonStyle(activeShapeKind === kind)}
+                >
+                  {kind === 'rect' ? '▭' : kind === 'ellipse' ? '⬭' : '╱'}
+                </button>
+              </Tooltip>
             ))}
           </div>
         )}
@@ -623,26 +649,27 @@ export function Toolbar(): React.ReactElement {
         <div style={{ width: 8 }} />
 
         {/* Snap toggle */}
-        <button
-          onClick={toggleSnap}
-          aria-pressed={snapEnabled}
-          title={snapEnabled ? 'Snapping on (S)' : 'Snapping off (S)'}
-          style={{
-            width: 30,
-            height: 30,
-            background: snapEnabled ? '#0af' : '#333',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background 0.15s',
-          }}
-        >
-          {SNAP_ICON}
-        </button>
+        <Tooltip label="Snap" shortcut="S" description="Snap to guides and objects">
+          <button
+            onClick={toggleSnap}
+            aria-pressed={snapEnabled}
+            style={{
+              width: 30,
+              height: 30,
+              background: snapEnabled ? '#0af' : '#333',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.15s',
+            }}
+          >
+            {SNAP_ICON}
+          </button>
+        </Tooltip>
       </div>
 
       {/* Right: platform selector + ratio presets + frame count + export + save status */}
@@ -657,16 +684,18 @@ export function Toolbar(): React.ReactElement {
       >
         {/* Resize mode toggle */}
         <div style={{ display: 'flex', gap: 2, padding: 2, background: '#222', border: '1px solid #444', borderRadius: 4, marginLeft: 8 }}>
-          <button
-            title="Advanced: frame clips content"
-            onClick={() => setResizeMode('advanced')}
-            style={segmentButtonStyle(resizeMode === 'advanced')}
-          >{CROP_ICON}</button>
-          <button
-            title="Auto: content fills frame on resize"
-            onClick={() => setResizeMode('auto')}
-            style={segmentButtonStyle(resizeMode === 'auto')}
-          >{AUTOFILL_ICON}</button>
+          <Tooltip label="Crop mode" description="Frame clips content">
+            <button
+              onClick={() => setResizeMode('advanced')}
+              style={segmentButtonStyle(resizeMode === 'advanced')}
+            >{CROP_ICON}</button>
+          </Tooltip>
+          <Tooltip label="Auto-fill mode" description="Content fills frame on resize">
+            <button
+              onClick={() => setResizeMode('auto')}
+              style={segmentButtonStyle(resizeMode === 'auto')}
+            >{AUTOFILL_ICON}</button>
+          </Tooltip>
         </div>
 
         {/* Platform dropdown */}
@@ -706,14 +735,14 @@ export function Toolbar(): React.ReactElement {
           }}
         >
           {presets.map((preset) => (
-            <button
-              key={preset.ratio}
-              onClick={() => { setRatio(preset.ratio as FrameRatio, preset.width, preset.height) }}
-              title={`${preset.label} (${preset.width}×${preset.height})`}
-              style={segmentButtonStyle(ratio === preset.ratio)}
-            >
-              {preset.label}
-            </button>
+            <Tooltip key={preset.ratio} label={preset.label}>
+              <button
+                onClick={() => { setRatio(preset.ratio as FrameRatio, preset.width, preset.height) }}
+                style={segmentButtonStyle(ratio === preset.ratio)}
+              >
+                {preset.label}
+              </button>
+            </Tooltip>
           ))}
         </div>
 
@@ -755,27 +784,28 @@ export function Toolbar(): React.ReactElement {
         <div style={{ width: 8 }} />
 
         <span style={{ color: '#aaa', fontSize: 13 }}>Frames:</span>
-        <button
-          onClick={handleMinus}
-          disabled={frameCount <= 1}
-          title="Remove frame"
-          style={{
-            width: 24,
-            height: 24,
-            background: '#333',
-            color: frameCount <= 1 ? '#555' : '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: frameCount <= 1 ? 'default' : 'pointer',
-            fontSize: 14,
-            lineHeight: '1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          −
-        </button>
+        <Tooltip label="Remove frame">
+          <button
+            onClick={handleMinus}
+            disabled={frameCount <= 1}
+            style={{
+              width: 24,
+              height: 24,
+              background: '#333',
+              color: frameCount <= 1 ? '#555' : '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: frameCount <= 1 ? 'default' : 'pointer',
+              fontSize: 14,
+              lineHeight: '1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            −
+          </button>
+        </Tooltip>
         <span
           style={{
             color: '#fff',
@@ -787,54 +817,56 @@ export function Toolbar(): React.ReactElement {
         >
           {frameCount}
         </span>
-        <button
-          onClick={handlePlus}
-          disabled={frameCount >= 10}
-          title="Add frame"
-          style={{
-            width: 24,
-            height: 24,
-            background: '#333',
-            color: frameCount >= 10 ? '#555' : '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: frameCount >= 10 ? 'default' : 'pointer',
-            fontSize: 14,
-            lineHeight: '1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          +
-        </button>
+        <Tooltip label="Add frame">
+          <button
+            onClick={handlePlus}
+            disabled={frameCount >= 10}
+            style={{
+              width: 24,
+              height: 24,
+              background: '#333',
+              color: frameCount >= 10 ? '#555' : '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: frameCount >= 10 ? 'default' : 'pointer',
+              fontSize: 14,
+              lineHeight: '1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            +
+          </button>
+        </Tooltip>
 
         <div style={{ width: 8 }} />
 
         {/* Export button + panel */}
         <div ref={exportWrapperRef} style={{ position: 'relative' }}>
-          <button
-            onClick={() => { setExportOpen((v) => !v) }}
-            title="Export frames"
-            style={{
-              padding: '4px 10px',
-              height: 30,
-              background: exportOpen ? '#0af' : '#333',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: 13,
-              transition: 'background 0.15s',
-              whiteSpace: 'nowrap',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-            }}
-          >
-            <ImageDown size={14} />
-            Export
-          </button>
+          <Tooltip label="Export">
+            <button
+              onClick={() => { setExportOpen((v) => !v) }}
+              style={{
+                padding: '4px 10px',
+                height: 30,
+                background: exportOpen ? '#0af' : '#333',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 13,
+                transition: 'background 0.15s',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+              }}
+            >
+              <ImageDown size={14} />
+              Export
+            </button>
+          </Tooltip>
 
           {exportOpen && (
             <div

@@ -14,6 +14,9 @@ import {
   applyStyleToAll,
 } from '@/canvas/textSpans'
 import { FontPicker } from './FontPicker'
+import Tooltip from './Tooltip'
+import { iconBtnStyle } from './iconBtnStyle'
+import { PenTool, Square, Circle, Trash2, Pencil, Eye, EyeOff } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // NumberField — normal (always has a value)
@@ -421,48 +424,62 @@ function AlignDistributeSection({
 
       {/* Row 1: horizontal alignment */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-        <button style={alignButtonStyle()} onClick={() => onAlign('left')} title="Align left edges">
-          Left
-        </button>
-        <button style={alignButtonStyle()} onClick={() => onAlign('centerH')} title="Center horizontally">
-          Center H
-        </button>
-        <button style={alignButtonStyle()} onClick={() => onAlign('right')} title="Align right edges">
-          Right
-        </button>
+        <Tooltip label="Align left">
+          <button style={alignButtonStyle()} onClick={() => onAlign('left')}>
+            Left
+          </button>
+        </Tooltip>
+        <Tooltip label="Center horizontally">
+          <button style={alignButtonStyle()} onClick={() => onAlign('centerH')}>
+            Center H
+          </button>
+        </Tooltip>
+        <Tooltip label="Align right">
+          <button style={alignButtonStyle()} onClick={() => onAlign('right')}>
+            Right
+          </button>
+        </Tooltip>
       </div>
 
       {/* Row 2: vertical alignment */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-        <button style={alignButtonStyle()} onClick={() => onAlign('top')} title="Align top edges">
-          Top
-        </button>
-        <button style={alignButtonStyle()} onClick={() => onAlign('centerV')} title="Center vertically">
-          Middle V
-        </button>
-        <button style={alignButtonStyle()} onClick={() => onAlign('bottom')} title="Align bottom edges">
-          Bottom
-        </button>
+        <Tooltip label="Align top">
+          <button style={alignButtonStyle()} onClick={() => onAlign('top')}>
+            Top
+          </button>
+        </Tooltip>
+        <Tooltip label="Center vertically">
+          <button style={alignButtonStyle()} onClick={() => onAlign('centerV')}>
+            Middle V
+          </button>
+        </Tooltip>
+        <Tooltip label="Align bottom">
+          <button style={alignButtonStyle()} onClick={() => onAlign('bottom')}>
+            Bottom
+          </button>
+        </Tooltip>
       </div>
 
       {/* Row 3: distribute */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-        <button
-          style={distributeButtonStyle(distributeDisabled)}
-          disabled={distributeDisabled}
-          onClick={() => onDistribute('horizontal')}
-          title={distributeDisabled ? 'Select 3+ objects to distribute' : 'Distribute horizontally'}
-        >
-          Distribute H
-        </button>
-        <button
-          style={distributeButtonStyle(distributeDisabled)}
-          disabled={distributeDisabled}
-          onClick={() => onDistribute('vertical')}
-          title={distributeDisabled ? 'Select 3+ objects to distribute' : 'Distribute vertically'}
-        >
-          Distribute V
-        </button>
+        <Tooltip label="Distribute horizontally">
+          <button
+            style={distributeButtonStyle(distributeDisabled)}
+            disabled={distributeDisabled}
+            onClick={() => onDistribute('horizontal')}
+          >
+            Distribute H
+          </button>
+        </Tooltip>
+        <Tooltip label="Distribute vertically">
+          <button
+            style={distributeButtonStyle(distributeDisabled)}
+            disabled={distributeDisabled}
+            onClick={() => onDistribute('vertical')}
+          >
+            Distribute V
+          </button>
+        </Tooltip>
       </div>
 
       {/* Reference object for alignment */}
@@ -771,24 +788,25 @@ function TextSection({
         {(['bold', 'italic'] as const).map((bit) => {
           const active = bit === 'bold' ? boldActive : italicActive
           return (
-            <button
-              key={bit}
-              onClick={() => toggleFontStyleBit(bit)}
-              style={{
-                padding: '3px 10px',
-                height: 28,
-                background: active ? '#0af' : '#333',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: bit === 'bold' ? 'bold' : 'normal',
-                fontStyle: bit === 'italic' ? 'italic' : 'normal',
-              }}
-            >
-              {bit === 'bold' ? 'B' : 'I'}
-            </button>
+            <Tooltip key={bit} label={bit === 'bold' ? 'Bold' : 'Italic'}>
+              <button
+                onClick={() => toggleFontStyleBit(bit)}
+                style={{
+                  padding: '3px 10px',
+                  height: 28,
+                  background: active ? '#0af' : '#333',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: bit === 'bold' ? 'bold' : 'normal',
+                  fontStyle: bit === 'italic' ? 'italic' : 'normal',
+                }}
+              >
+                {bit === 'bold' ? 'B' : 'I'}
+              </button>
+            </Tooltip>
           )
         })}
       </div>
@@ -796,23 +814,24 @@ function TextSection({
       {/* Alignment — always layer-level */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
         {(['left', 'center', 'right'] as const).map((a) => (
-          <button
-            key={a}
-            onClick={() => onCommit(selectedId, { align: a } as Partial<TextObject>)}
-            style={{
-              padding: '3px 10px',
-              height: 28,
-              flex: 1,
-              background: textObj.align === a ? '#0af' : '#333',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: 12,
-            }}
-          >
-            {a === 'left' ? '←' : a === 'center' ? '↔' : '→'}
-          </button>
+          <Tooltip key={a} label={a === 'left' ? 'Align left' : a === 'center' ? 'Align center' : 'Align right'}>
+            <button
+              onClick={() => onCommit(selectedId, { align: a } as Partial<TextObject>)}
+              style={{
+                padding: '3px 10px',
+                height: 28,
+                flex: 1,
+                background: textObj.align === a ? '#0af' : '#333',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              {a === 'left' ? '←' : a === 'center' ? '↔' : '→'}
+            </button>
+          </Tooltip>
         ))}
       </div>
 
@@ -1225,28 +1244,37 @@ export function PropertiesPanel(): React.ReactElement {
                         </button>
                       </div>
                     ) : (
-                      /* Tool picker */
+                      /* Tool picker — icon-only buttons */
                       <div>
                         <div style={{ color: '#777', fontSize: 11, marginBottom: 6 }}>Add mask:</div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          {(['pen', 'rect', 'ellipse'] as const).map((tool) => (
+                          <Tooltip label="Pen mask">
                             <button
-                              key={tool}
-                              onClick={() => { if (selectedId) enterMaskDrawMode(selectedId, tool) }}
-                              style={{
-                                flex: 1,
-                                height: 28,
-                                background: '#333',
-                                color: '#ccc',
-                                border: '1px solid #444',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                                fontSize: 12,
-                              }}
+                              title="Pen mask"
+                              onClick={() => { if (selectedId) enterMaskDrawMode(selectedId, 'pen') }}
+                              style={iconBtnStyle()}
                             >
-                              {tool === 'pen' ? 'Pen' : tool === 'rect' ? 'Rect' : 'Oval'}
+                              <PenTool size={14} />
                             </button>
-                          ))}
+                          </Tooltip>
+                          <Tooltip label="Rectangle mask">
+                            <button
+                              title="Rectangle mask"
+                              onClick={() => { if (selectedId) enterMaskDrawMode(selectedId, 'rect') }}
+                              style={iconBtnStyle()}
+                            >
+                              <Square size={14} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Oval mask">
+                            <button
+                              title="Oval mask"
+                              onClick={() => { if (selectedId) enterMaskDrawMode(selectedId, 'ellipse') }}
+                              style={iconBtnStyle()}
+                            >
+                              <Circle size={14} />
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
                     )
@@ -1267,54 +1295,39 @@ export function PropertiesPanel(): React.ReactElement {
                             />
                           </div>
                         )}
-                        <button
-                          onClick={() => { if (selectedId) enterMaskEditMode(selectedId) }}
-                          style={{
-                            flex: 1,
-                            height: 28,
-                            background: '#333',
-                            color: '#ccc',
-                            border: '1px solid #555',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            fontSize: 11,
-                          }}
-                        >
-                          Edit Mask
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (selectedId) commitUpdate(selectedId, { mask: { ...imgObj.mask!, visible: !imgObj.mask!.visible } })
-                          }}
-                          title={imgObj.mask.visible ? 'Hide mask' : 'Show mask'}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '0 4px',
-                            fontSize: 14,
-                            opacity: imgObj.mask.visible ? 0.9 : 0.3,
-                          }}
-                        >
-                          👁
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (selectedId) commitUpdate(selectedId, { mask: undefined })
-                          }}
-                          title="Delete mask"
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '0 4px',
-                            fontSize: 12,
-                            color: '#f44',
-                            opacity: 0.7,
-                          }}
-                        >
-                          ✕
-                        </button>
+                        <Tooltip label="Edit mask">
+                          <button
+                            title="Edit mask"
+                            onClick={() => { if (selectedId) enterMaskEditMode(selectedId) }}
+                            style={{ ...iconBtnStyle(), flex: 1, width: 'auto' }}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label={imgObj.mask.visible ? 'Hide mask' : 'Show mask'}>
+                          <button
+                            title={imgObj.mask.visible ? 'Hide mask' : 'Show mask'}
+                            onClick={() => {
+                              if (selectedId) commitUpdate(selectedId, { mask: { ...imgObj.mask!, visible: !imgObj.mask!.visible } })
+                            }}
+                            style={iconBtnStyle()}
+                          >
+                            {imgObj.mask.visible
+                              ? <Eye size={14} />
+                              : <EyeOff size={14} />}
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Delete mask">
+                          <button
+                            title="Delete mask"
+                            onClick={() => {
+                              if (selectedId) commitUpdate(selectedId, { mask: undefined })
+                            }}
+                            style={iconBtnStyle()}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </Tooltip>
                       </div>
 
                       {/* Feather */}
@@ -1402,93 +1415,99 @@ export function PropertiesPanel(): React.ReactElement {
                 onChange={(val) => patch({ contentHeight: val })}
               />
 
-              <button
-                onClick={() => {
-                  if (!selectedId || !imgObj.naturalWidth || !imgObj.naturalHeight) return
-                  const aspect = imgObj.naturalWidth / imgObj.naturalHeight
-                  commitUpdate(selectedId, { contentHeight: Math.round(imgObj.contentWidth / aspect) })
-                }}
-                style={{
-                  width: '100%', height: 30,
-                  background: '#333', color: '#fff',
-                  border: '1px solid #555', borderRadius: 4,
-                  cursor: 'pointer', fontSize: 12, marginBottom: 6,
-                }}
-              >
-                Reset Aspect Ratio
-              </button>
+              <Tooltip label="Reset aspect ratio">
+                <button
+                  onClick={() => {
+                    if (!selectedId || !imgObj.naturalWidth || !imgObj.naturalHeight) return
+                    const aspect = imgObj.naturalWidth / imgObj.naturalHeight
+                    commitUpdate(selectedId, { contentHeight: Math.round(imgObj.contentWidth / aspect) })
+                  }}
+                  style={{
+                    width: '100%', height: 30,
+                    background: '#333', color: '#fff',
+                    border: '1px solid #555', borderRadius: 4,
+                    cursor: 'pointer', fontSize: 12, marginBottom: 6,
+                  }}
+                >
+                  Reset Aspect Ratio
+                </button>
+              </Tooltip>
 
-              <button
-                onClick={() => {
-                  if (!selectedId) return
-                  const theta = imgObj.rotation * (Math.PI / 180)
-                  const cosTheta = Math.cos(theta)
-                  const sinTheta = Math.sin(theta)
-                  const newFrameX =
-                    imgObj.frameX +
-                    imgObj.contentOffsetX * cosTheta -
-                    imgObj.contentOffsetY * sinTheta
-                  const newFrameY =
-                    imgObj.frameY +
-                    imgObj.contentOffsetX * sinTheta +
-                    imgObj.contentOffsetY * cosTheta
-                  commitUpdate(selectedId, {
-                    frameX: newFrameX,
-                    frameY: newFrameY,
-                    x: newFrameX,
-                    y: newFrameY,
-                    frameWidth: imgObj.contentWidth,
-                    frameHeight: imgObj.contentHeight,
-                    width: imgObj.contentWidth,
-                    height: imgObj.contentHeight,
-                    contentOffsetX: 0,
-                    contentOffsetY: 0,
-                  })
-                }}
-                style={{
-                  width: '100%',
-                  height: 30,
-                  background: '#333',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  marginBottom: 6,
-                }}
-              >
-                Fit frame to content
-              </button>
+              <Tooltip label="Fit frame to content">
+                <button
+                  onClick={() => {
+                    if (!selectedId) return
+                    const theta = imgObj.rotation * (Math.PI / 180)
+                    const cosTheta = Math.cos(theta)
+                    const sinTheta = Math.sin(theta)
+                    const newFrameX =
+                      imgObj.frameX +
+                      imgObj.contentOffsetX * cosTheta -
+                      imgObj.contentOffsetY * sinTheta
+                    const newFrameY =
+                      imgObj.frameY +
+                      imgObj.contentOffsetX * sinTheta +
+                      imgObj.contentOffsetY * cosTheta
+                    commitUpdate(selectedId, {
+                      frameX: newFrameX,
+                      frameY: newFrameY,
+                      x: newFrameX,
+                      y: newFrameY,
+                      frameWidth: imgObj.contentWidth,
+                      frameHeight: imgObj.contentHeight,
+                      width: imgObj.contentWidth,
+                      height: imgObj.contentHeight,
+                      contentOffsetX: 0,
+                      contentOffsetY: 0,
+                    })
+                  }}
+                  style={{
+                    width: '100%',
+                    height: 30,
+                    background: '#333',
+                    color: '#fff',
+                    border: '1px solid #555',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    marginBottom: 6,
+                  }}
+                >
+                  Fit frame to content
+                </button>
+              </Tooltip>
 
-              <button
-                onClick={() => {
-                  const scale = Math.max(
-                    imgObj.frameWidth / imgObj.contentWidth,
-                    imgObj.frameHeight / imgObj.contentHeight
-                  )
-                  const newW = imgObj.contentWidth * scale
-                  const newH = imgObj.contentHeight * scale
-                  patch({
-                    contentWidth: newW,
-                    contentHeight: newH,
-                    contentOffsetX: (imgObj.frameWidth - newW) / 2,
-                    contentOffsetY: (imgObj.frameHeight - newH) / 2,
-                  })
-                }}
-                style={{
-                  width: '100%',
-                  height: 30,
-                  background: '#333',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  marginBottom: 6,
-                }}
-              >
-                Fill frame with content
-              </button>
+              <Tooltip label="Fill frame with content">
+                <button
+                  onClick={() => {
+                    const scale = Math.max(
+                      imgObj.frameWidth / imgObj.contentWidth,
+                      imgObj.frameHeight / imgObj.contentHeight
+                    )
+                    const newW = imgObj.contentWidth * scale
+                    const newH = imgObj.contentHeight * scale
+                    patch({
+                      contentWidth: newW,
+                      contentHeight: newH,
+                      contentOffsetX: (imgObj.frameWidth - newW) / 2,
+                      contentOffsetY: (imgObj.frameHeight - newH) / 2,
+                    })
+                  }}
+                  style={{
+                    width: '100%',
+                    height: 30,
+                    background: '#333',
+                    color: '#fff',
+                    border: '1px solid #555',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    marginBottom: 6,
+                  }}
+                >
+                  Fill frame with content
+                </button>
+              </Tooltip>
 
               <div style={{ color: '#888', fontSize: 11, marginTop: 8, marginBottom: 8 }}>
                 Click outside to exit content mode
@@ -1545,22 +1564,24 @@ export function PropertiesPanel(): React.ReactElement {
               <div style={{ color: '#f44', fontSize: 12 }}>{activeBgOp.error}</div>
             )}
             {(!activeBgOp || activeBgOp.status === 'idle') && (
-              <button
-                onClick={handleRemoveBg}
-                style={{
-                  width: '100%',
-                  height: 32,
-                  background: '#0af',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 'bold',
-                }}
-              >
-                Remove BG
-              </button>
+              <Tooltip label="Remove background" description="AI-powered, runs on device">
+                <button
+                  onClick={handleRemoveBg}
+                  style={{
+                    width: '100%',
+                    height: 32,
+                    background: '#0af',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Remove BG
+                </button>
+              </Tooltip>
             )}
           </div>
         )}
@@ -1594,56 +1615,61 @@ export function PropertiesPanel(): React.ReactElement {
                 <div style={{ color: '#52b788', fontSize: 12, marginBottom: 6 }}>
                   Watching for changes…
                 </div>
-                <button
-                  onClick={() => { void stopEditing(selectedId) }}
-                  style={{
-                    width: '100%',
-                    height: 28,
-                    background: '#2a2a2a',
-                    color: '#aaa',
-                    border: '1px solid #444',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    fontSize: 12,
-                  }}
-                >
-                  Stop Watching
-                </button>
-              </>
-            ) : (
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  onClick={() => { void editExternally(selectedId, effectiveFilePath) }}
-                  style={{
-                    flex: 1,
-                    height: 32,
-                    background: '#2a2a2a',
-                    color: '#e0e0e0',
-                    border: '1px solid #444',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    fontSize: 13,
-                  }}
-                >
-                  {externalEditor != null ? `Edit in ${externalEditor.name}` : 'Edit Externally'}
-                </button>
-                {externalEditor != null && (
+                <Tooltip label="Stop watching">
                   <button
-                    onClick={() => { void pickNewEditor() }}
-                    title="Change default editor"
+                    onClick={() => { void stopEditing(selectedId) }}
                     style={{
-                      height: 32,
-                      padding: '0 10px',
+                      width: '100%',
+                      height: 28,
                       background: '#2a2a2a',
-                      color: '#888',
+                      color: '#aaa',
                       border: '1px solid #444',
                       borderRadius: 6,
                       cursor: 'pointer',
-                      fontSize: 11,
+                      fontSize: 12,
                     }}
                   >
-                    Change
+                    Stop Watching
                   </button>
+                </Tooltip>
+              </>
+            ) : (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Tooltip label="Edit externally">
+                  <button
+                    onClick={() => { void editExternally(selectedId, effectiveFilePath) }}
+                    style={{
+                      flex: 1,
+                      height: 32,
+                      background: '#2a2a2a',
+                      color: '#e0e0e0',
+                      border: '1px solid #444',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                    }}
+                  >
+                    {externalEditor != null ? `Edit in ${externalEditor.name}` : 'Edit Externally'}
+                  </button>
+                </Tooltip>
+                {externalEditor != null && (
+                  <Tooltip label="Change editor">
+                    <button
+                      onClick={() => { void pickNewEditor() }}
+                      style={{
+                        height: 32,
+                        padding: '0 10px',
+                        background: '#2a2a2a',
+                        color: '#888',
+                        border: '1px solid #444',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontSize: 11,
+                      }}
+                    >
+                      Change
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             )}
