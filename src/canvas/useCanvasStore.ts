@@ -190,7 +190,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     frames: makeFrames(2),
     backgroundColor: '#ffffff',
     activeTool: 'select',
-    resizeMode: 'advanced',
+    resizeMode: 'auto',
     snapEnabled: true,
     past: [],
     future: [],

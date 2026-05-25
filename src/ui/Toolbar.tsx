@@ -684,17 +684,17 @@ export function Toolbar(): React.ReactElement {
       >
         {/* Resize mode toggle */}
         <div style={{ display: 'flex', gap: 2, padding: 2, background: '#222', border: '1px solid #444', borderRadius: 4, marginLeft: 8 }}>
-          <Tooltip label="Crop mode" description="Frame clips content">
-            <button
-              onClick={() => setResizeMode('advanced')}
-              style={segmentButtonStyle(resizeMode === 'advanced')}
-            >{CROP_ICON}</button>
-          </Tooltip>
           <Tooltip label="Auto-fill mode" description="Content fills frame on resize">
             <button
               onClick={() => setResizeMode('auto')}
               style={segmentButtonStyle(resizeMode === 'auto')}
             >{AUTOFILL_ICON}</button>
+          </Tooltip>
+          <Tooltip label="Crop mode" description="Frame clips content">
+            <button
+              onClick={() => setResizeMode('advanced')}
+              style={segmentButtonStyle(resizeMode === 'advanced')}
+            >{CROP_ICON}</button>
           </Tooltip>
         </div>
 

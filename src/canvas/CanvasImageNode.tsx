@@ -724,8 +724,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
       })()}
 
       {/* Invisible frame rect — sole interaction/transform target in frame mode.
-          keepRatio=true makes proportional resize the default; holding Shift toggles
-          to free stretch via Konva's native XOR behaviour. */}
+          keepRatio mirrors resizeMode: auto=proportional default, advanced=free default.
+          Shift XOR inverts the default in both modes (Konva native). */}
       <Rect
         ref={frameRectRef}
         x={obj.frameX}
@@ -791,7 +791,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
 
       <Transformer
         ref={transformerRef}
-        keepRatio={true}
+        keepRatio={resizeMode === 'auto'}
+        shiftBehavior={resizeMode === 'auto' ? 'inverted' : 'default'}
         rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
         rotationSnapTolerance={8}
         boundBoxFunc={(oldBox, newBox) => {
@@ -824,7 +825,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
             anchor,
             obj.id,
             logicalThreshold,
-            true,
+            resizeMode === 'auto',
           )
           const snapped = {
             x: snappedLogical.x * scale + panX,
