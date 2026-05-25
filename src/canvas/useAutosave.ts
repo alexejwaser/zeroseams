@@ -61,11 +61,16 @@ export function useAutosave(): { status: SaveStatus; lastSavedAt: string | null 
           version: versionRef.current,
         }
 
-        const savePromise = window.electronAPI.autosaveProject(saveStore.projectFilename, JSON.stringify(project))
+        const currentFilePath = saveStore.currentFilePath
+        const savePromise = currentFilePath
+          ? window.electronAPI.saveProject(currentFilePath, JSON.stringify(project))
+          : window.electronAPI.autosaveProject(saveStore.projectFilename, JSON.stringify(project))
 
         savePromise
           .then((result) => {
-            if (result.filePath) useSaveStatusStore.getState().setAutosaveFilePath(result.filePath)
+            if (!currentFilePath && 'filePath' in result && result.filePath) {
+              useSaveStatusStore.getState().setAutosaveFilePath(result.filePath)
+            }
             applyStatus('saved')
             const savedAt = new Date().toISOString()
             applyLastSavedAt(savedAt)

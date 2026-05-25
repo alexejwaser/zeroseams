@@ -196,7 +196,7 @@ export function Toolbar(): React.ReactElement {
       loadProject(project)
       const filename = project.name.toLowerCase().replace(/\s+/g, '-')
       setProjectMeta(project.id, project.name, filename, project.createdAt)
-      setCurrentFilePath(null)
+      setCurrentFilePath(result.filePath ?? null)
     } catch (err) {
       console.error('[open]', err)
     } finally {

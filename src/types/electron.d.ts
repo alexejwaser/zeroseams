@@ -14,7 +14,7 @@ interface Window {
       filename: string,
       json: string,
     ): Promise<{ success: boolean; filePath?: string; error?: string }>
-    openProject(): Promise<{ success: boolean; json?: string; error?: string }>
+    openProject(): Promise<{ success: boolean; json?: string; filePath?: string; error?: string }>
     listRecentProjects(): Promise<{
       files: Array<{ name: string; path: string; modifiedAt: string }>
     }>

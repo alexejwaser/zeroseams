@@ -13,6 +13,20 @@ function getPreferencesPath(): string {
   return join(app.getPath('userData'), 'preferences.json')
 }
 
+function getRecentFilesPath(): string {
+  return join(app.getPath('userData'), 'recentFiles.json')
+}
+
+async function addRecentFile(filePath: string): Promise<void> {
+  let list: string[] = []
+  try {
+    const raw = await readFile(getRecentFilesPath(), 'utf-8')
+    list = JSON.parse(raw) as string[]
+  } catch { /* first run or corrupt — start fresh */ }
+  list = [filePath, ...list.filter((p) => p !== filePath)].slice(0, 30)
+  await writeFile(getRecentFilesPath(), JSON.stringify(list), 'utf-8').catch(() => {})
+}
+
 interface Preferences {
   defaultExternalEditor?: ExternalEditor | null
 }
@@ -88,6 +102,7 @@ ipcMain.handle(
       await mkdir(dir, { recursive: true })
       const filePath = join(dir, `${filename}.zeroseams`)
       await writeFile(filePath, json, 'utf-8')
+      void addRecentFile(filePath)
       console.log(`[main] autosaved → ${filePath}`)
       return { success: true, filePath }
     } catch (error) {
@@ -106,7 +121,8 @@ ipcMain.handle('open-project', async () => {
   if (canceled || filePaths.length === 0) return { success: false }
   try {
     const json = await readFile(filePaths[0], 'utf-8')
-    return { success: true, json }
+    void addRecentFile(filePaths[0])
+    return { success: true, json, filePath: filePaths[0] }
   } catch (error) {
     console.error(`[main] open-project error:`, error)
     return { success: false, error: String(error) }
@@ -125,6 +141,7 @@ ipcMain.handle(
     try {
       await mkdir(dirname(filePath), { recursive: true })
       await writeFile(filePath, json, 'utf-8')
+      void addRecentFile(filePath)
       return { success: true, filePath }
     } catch (error) {
       return { success: false, error: String(error) }
@@ -152,6 +169,7 @@ ipcMain.handle(
   async (_event, { filePath, json }: { filePath: string; json: string }) => {
     try {
       await writeFile(filePath, json, 'utf-8')
+      void addRecentFile(filePath)
       return { success: true }
     } catch (error) {
       return { success: false, error: String(error) }
@@ -164,26 +182,26 @@ ipcMain.handle('get-system-fonts', async () => {
 })
 
 ipcMain.handle('list-recent-projects', async () => {
-  const dir = getZeroSeamsDir()
+  let paths: string[] = []
   try {
-    const entries = await readdir(dir)
-    const zeroseamsFiles = entries.filter((name) => name.endsWith('.zeroseams'))
-    const files = await Promise.all(
-      zeroseamsFiles.map(async (name) => {
-        const filePath = join(dir, name)
-        const stats = await stat(filePath)
-        return {
-          name,
-          path: filePath,
-          modifiedAt: stats.mtime.toISOString(),
+    const raw = await readFile(getRecentFilesPath(), 'utf-8')
+    paths = JSON.parse(raw) as string[]
+  } catch { return { files: [] } }
+
+  const files = (
+    await Promise.all(
+      paths.map(async (filePath) => {
+        try {
+          const stats = await stat(filePath)
+          return { name: basename(filePath), path: filePath, modifiedAt: stats.mtime.toISOString() }
+        } catch {
+          return null
         }
       }),
     )
-    return { files }
-  } catch (error) {
-    // Directory doesn't exist yet
-    return { files: [] }
-  }
+  ).filter((f): f is NonNullable<typeof f> => f !== null)
+
+  return { files }
 })
 
 ipcMain.handle('get-external-editor', async () => {
