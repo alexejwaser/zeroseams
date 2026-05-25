@@ -3,6 +3,7 @@ import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { useThumbnailStore } from '@/canvas/useThumbnailStore'
 import type { CanvasObject, CanvasObjectType, ImageObject } from '@/types/canvas'
 import Tooltip from './Tooltip'
+import { Link2, Star, Lock, LockOpen, Eye, EyeOff } from 'lucide-react'
 
 function typeLabel(type: CanvasObjectType): string {
   switch (type) {
@@ -150,7 +151,7 @@ export function LayerPanel(): React.ReactElement {
               }}
               onDragEnd={() => { dragId.current = null; setDropPos(null) }}
               style={{
-                height: 48,
+                height: 36,
                 display: 'flex',
                 alignItems: 'center',
                 padding: '0 8px',
@@ -171,7 +172,7 @@ export function LayerPanel(): React.ReactElement {
                   <div
                     onClick={(e) => { e.stopPropagation(); setSelected(id) }}
                     style={{
-                      width: 30, height: 30, borderRadius: 3, overflow: 'hidden',
+                      width: 24, height: 24, borderRadius: 3, overflow: 'hidden',
                       background: '#111', border: '1px solid #3a3a3a', cursor: 'pointer', flexShrink: 0,
                     }}
                   >
@@ -181,13 +182,15 @@ export function LayerPanel(): React.ReactElement {
                       <div style={{ width: '100%', height: '100%', background: '#222' }} />
                     )}
                   </div>
-                  <span style={{ color: '#555', fontSize: 10, flexShrink: 0 }}>⛓</span>
+                  <span style={{ color: '#555', fontSize: 10, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                    <Link2 size={11} strokeWidth={1.5}/>
+                  </span>
                   {/* Mask thumbnail */}
                   <div
                     onClick={(e) => { e.stopPropagation(); enterMaskEditMode(id) }}
                     title="Click to edit mask"
                     style={{
-                      width: 30, height: 30, borderRadius: 3, overflow: 'hidden',
+                      width: 24, height: 24, borderRadius: 3, overflow: 'hidden',
                       background: '#000', border: '1px solid #3a3a3a', cursor: 'pointer', flexShrink: 0,
                     }}
                   >
@@ -201,7 +204,7 @@ export function LayerPanel(): React.ReactElement {
               ) : (
                 <div
                   style={{
-                    width: 44, height: 44, flexShrink: 0, borderRadius: 3,
+                    width: 36, height: 36, flexShrink: 0, borderRadius: 3,
                     overflow: 'hidden', background: '#111', border: '1px solid #3a3a3a',
                   }}
                 >
@@ -246,9 +249,11 @@ export function LayerPanel(): React.ReactElement {
                       fontSize: 12,
                       lineHeight: '1',
                       color: isAnchor ? '#f5a623' : '#666',
+                      display: 'flex',
+                      alignItems: 'center',
                     }}
                   >
-                    ★
+                    <Star size={13} strokeWidth={1.5} fill={isAnchor ? 'gold' : 'none'} color={isAnchor ? 'gold' : '#666'}/>
                   </button>
                 </Tooltip>
               )}
@@ -266,10 +271,13 @@ export function LayerPanel(): React.ReactElement {
                     padding: '0 2px',
                     fontSize: 13,
                     lineHeight: '1',
+                    color: '#fff',
                     opacity: obj.locked ? 1 : 0.3,
+                    display: 'flex',
+                    alignItems: 'center',
                   }}
                 >
-                  {obj.locked ? '🔒' : '🔓'}
+                  {obj.locked ? <Lock size={13} strokeWidth={1.5}/> : <LockOpen size={13} strokeWidth={1.5}/>}
                 </button>
               </Tooltip>
 
@@ -286,10 +294,13 @@ export function LayerPanel(): React.ReactElement {
                     padding: '0 2px',
                     fontSize: 14,
                     lineHeight: '1',
-                    opacity: 0.7,
+                    color: '#fff',
+                    opacity: obj.visible ? 0.7 : 0.4,
+                    display: 'flex',
+                    alignItems: 'center',
                   }}
                 >
-                  {obj.visible ? '👁' : '🚫'}
+                  {obj.visible ? <Eye size={13} strokeWidth={1.5}/> : <EyeOff size={13} strokeWidth={1.5}/>}
                 </button>
               </Tooltip>
             </div>

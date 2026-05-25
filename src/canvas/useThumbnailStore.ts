@@ -293,76 +293,78 @@ export function useThumbnailGenerator(): void {
   const setThumbnail = useThumbnailStore((s) => s.setThumbnail)
   const removeThumbnail = useThumbnailStore((s) => s.removeThumbnail)
   const prevObjectsRef = useRef<Record<string, CanvasObject>>({})
-  // Initialise to -1 so the first subscription event always triggers an initial
-  // diff — this ensures thumbnails are generated for objects loaded from autosave
-  // (which may not push history entries before the hook mounts).
   const prevPastLengthRef = useRef<number>(-1)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Shared: flush pending dirty IDs → generate thumbnails
+  function flushPending(): void {
+    if (timerRef.current !== null) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null
+      const currentObjects = useCanvasStore.getState().objects
+      const pending = useThumbnailStore.getState().pendingIds
+      for (const id of Array.from(pending)) {
+        const obj = currentObjects[id]
+        if (!obj) {
+          clearDirty(id)
+          continue
+        }
+        generateThumbnail(obj)
+          .then((url) => {
+            if (url) setThumbnail(id, url)
+            clearDirty(id)
+            if (obj.type === 'image') {
+              const imgObj = obj as ImageObject
+              if (imgObj.mask) {
+                setThumbnail(`${id}__mask`, generateMaskThumbnail(imgObj))
+              } else {
+                removeThumbnail(`${id}__mask`)
+              }
+            }
+          })
+          .catch(() => clearDirty(id))
+      }
+    }, 150)
+  }
+
+  // On mount: generate thumbnails for any objects already in the store
+  // (handles project loaded before this component mounted)
+  useEffect(() => {
+    const state = useCanvasStore.getState()
+    const ids = Object.keys(state.objects)
+    if (ids.length > 0) {
+      prevObjectsRef.current = state.objects
+      prevPastLengthRef.current = state.past.length
+      for (const id of ids) markDirty(id)
+      flushPending()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Subscribe: generate on each new history commit
   useEffect(() => {
     const unsubscribe = useCanvasStore.subscribe((state) => {
       const pastLength = state.past.length
       const objects = state.objects
 
-      // Only trigger on a new commit (past grew), not on every live-drag updateObject
       if (pastLength === prevPastLengthRef.current) return
-
       prevPastLengthRef.current = pastLength
 
       const prev = prevObjectsRef.current
       const dirtyIds: string[] = []
 
-      // Detect added or changed objects
       for (const id of Object.keys(objects)) {
-        if (prev[id] !== objects[id]) {
-          dirtyIds.push(id)
-        }
+        if (prev[id] !== objects[id]) dirtyIds.push(id)
       }
-
-      // Detect removed objects
       for (const id of Object.keys(prev)) {
-        if (!objects[id]) {
-          removeThumbnail(id)
-        }
+        if (!objects[id]) removeThumbnail(id)
       }
 
       prevObjectsRef.current = objects
 
       if (dirtyIds.length === 0) return
-
-      for (const id of dirtyIds) {
-        markDirty(id)
-      }
-
-      // Debounced generation
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null
-        const currentObjects = useCanvasStore.getState().objects
-        const pending = useThumbnailStore.getState().pendingIds
-        for (const id of Array.from(pending)) {
-          const obj = currentObjects[id]
-          if (!obj) {
-            clearDirty(id)
-            continue
-          }
-          generateThumbnail(obj)
-            .then((url) => {
-              if (url) setThumbnail(id, url)
-              clearDirty(id)
-              // Also generate/remove mask thumbnail for image layers
-              if (obj.type === 'image') {
-                const imgObj = obj as ImageObject
-                if (imgObj.mask) {
-                  setThumbnail(`${id}__mask`, generateMaskThumbnail(imgObj))
-                } else {
-                  removeThumbnail(`${id}__mask`)
-                }
-              }
-            })
-            .catch(() => clearDirty(id))
-        }
-      }, 150)
+      for (const id of dirtyIds) markDirty(id)
+      flushPending()
     })
 
     return () => {

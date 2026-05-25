@@ -7,7 +7,6 @@ import { useExternalEdit } from '@/canvas/useExternalEdit'
 import { useSaveStatusStore } from './useSaveStatusStore'
 import type { BackgroundRemovalOperation } from '@/types/ai'
 import type { ImageObject, TextObject, ShapeObject, PathObject, FontStyle, MaskData } from '@/types/canvas'
-import type { Frame } from '@/types/project'
 import {
   getSelectionStyle,
   applyStyleToRange,
@@ -16,7 +15,7 @@ import {
 import { FontPicker } from './FontPicker'
 import Tooltip from './Tooltip'
 import { iconBtnStyle } from './iconBtnStyle'
-import { PenTool, Square, Circle, Trash2, Pencil, Eye, EyeOff } from 'lucide-react'
+import { PenTool, Square, Circle, Trash2, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // NumberField — normal (always has a value)
@@ -523,103 +522,13 @@ function AlignDistributeSection({
 }
 
 // ---------------------------------------------------------------------------
-// CanvasSection
+// CanvasSection — shown when nothing is selected
 // ---------------------------------------------------------------------------
 
-interface FrameRowProps {
-  frame: Frame
-  canvasDefault: string
-  onColorChange: (color: string) => void
-  onClear: () => void
-}
-
-function FrameRow({ frame, canvasDefault, onColorChange, onClear }: FrameRowProps): React.ReactElement {
-  const effectiveColor = frame.backgroundColor ?? canvasDefault
-
+function CanvasSection(): React.ReactElement {
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          marginBottom: 4,
-          gap: 6,
-        }}
-      >
-        <span style={{ color: '#ddd', fontSize: 12, flex: 1 }}>{frame.label}</span>
-        {frame.backgroundColor !== null && (
-          <button
-            onClick={onClear}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#888',
-              fontSize: 11,
-              cursor: 'pointer',
-              padding: '0 2px',
-              textDecoration: 'underline',
-            }}
-          >
-            Clear
-          </button>
-        )}
-        {frame.backgroundColor === null && (
-          <span style={{ color: '#555', fontSize: 11 }}>Default</span>
-        )}
-      </div>
-      <ColorInput value={effectiveColor} onChange={onColorChange} />
-    </div>
-  )
-}
-
-interface CanvasSectionProps {
-  backgroundColor: string
-  frames: Frame[]
-  ratio: 'square' | 'portrait'
-  onCanvasBgChange: (color: string) => void
-  onFrameBgChange: (frameIndex: number, color: string) => void
-  onFrameBgClear: (frameIndex: number) => void
-}
-
-function CanvasSection({
-  backgroundColor,
-  frames,
-  ratio,
-  onCanvasBgChange,
-  onFrameBgChange,
-  onFrameBgClear,
-}: CanvasSectionProps): React.ReactElement {
-  const formatLabel = ratio === 'portrait' ? '4:5 (Portrait)' : '1:1 (Square)'
-
-  return (
-    <div style={{ padding: '12px 12px 0' }}>
-      <div style={{ ...sectionLabelStyle, marginTop: 0 }}>Canvas</div>
-
-      <div
-        style={{
-          color: '#aaa',
-          fontSize: 12,
-          marginBottom: 10,
-        }}
-      >
-        Format: {formatLabel}
-      </div>
-
-      <div style={sectionLabelStyle}>Background</div>
-      <div style={{ marginBottom: 12 }}>
-        <ColorInput value={backgroundColor} onChange={onCanvasBgChange} />
-      </div>
-
-      <div style={sectionLabelStyle}>Per-Frame Colors</div>
-      {frames.map((frame) => (
-        <FrameRow
-          key={frame.index}
-          frame={frame}
-          canvasDefault={backgroundColor}
-          onColorChange={(color) => onFrameBgChange(frame.index, color)}
-          onClear={() => onFrameBgClear(frame.index)}
-        />
-      ))}
+    <div style={{ padding: '12px 12px 0', color: '#555', fontSize: 12 }}>
+      Select an object to see its properties, or open Frame Settings to configure the canvas.
     </div>
   )
 }
@@ -724,12 +633,33 @@ function TextSection({
 
   return (
     <div style={{ padding: '12px 12px 0' }}>
-      {/* Transform fields — always layer-level */}
-      <NumberField label="X" value={textObj.x} onChange={(val) => onCommit(selectedId, { x: val } as Partial<TextObject>)} />
-      <NumberField label="Y" value={textObj.y} onChange={(val) => onCommit(selectedId, { y: val } as Partial<TextObject>)} />
-      <NumberField label="Width" value={textObj.width} min={1} onChange={(val) => onCommit(selectedId, { width: val } as Partial<TextObject>)} />
-      <NumberField label="Rotation" value={textObj.rotation} onChange={(val) => onCommit(selectedId, { rotation: val } as Partial<TextObject>)} />
-      <NumberField label="Opacity" value={textObj.opacity} step={0.01} min={0} max={1} onChange={(val) => onCommit(selectedId, { opacity: val } as Partial<TextObject>)} />
+      {/* Rotation slider */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Rotation</label>
+        <input
+          type="range" min={-360} max={360} step={1}
+          value={Math.round(textObj.rotation ?? 0)}
+          onChange={e => onCommit(selectedId, { rotation: Number(e.target.value) } as Partial<TextObject>)}
+          style={{ flex: 1 }}
+        />
+        <span style={{ minWidth: 38, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
+          {Math.round(textObj.rotation ?? 0)}°
+        </span>
+      </div>
+
+      {/* Opacity slider */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Opacity</label>
+        <input
+          type="range" min={0} max={100} step={1}
+          value={Math.round((textObj.opacity ?? 1) * 100)}
+          onChange={e => onCommit(selectedId, { opacity: Number(e.target.value) / 100 } as Partial<TextObject>)}
+          style={{ flex: 1 }}
+        />
+        <span style={{ minWidth: 32, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
+          {Math.round((textObj.opacity ?? 1) * 100)}%
+        </span>
+      </div>
 
       {/* Inline edit mode banner / hint */}
       {isInEditMode ? (
@@ -827,9 +757,16 @@ function TextSection({
                 borderRadius: 4,
                 cursor: 'pointer',
                 fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              {a === 'left' ? '←' : a === 'center' ? '↔' : '→'}
+              {a === 'left'
+                ? <AlignLeft size={14} strokeWidth={1.5}/>
+                : a === 'center'
+                ? <AlignCenter size={14} strokeWidth={1.5}/>
+                : <AlignRight size={14} strokeWidth={1.5}/>}
             </button>
           </Tooltip>
         ))}
@@ -888,11 +825,6 @@ export function PropertiesPanel(): React.ReactElement {
 
   const thumbnails = useThumbnailStore((s) => s.thumbnails)
   const distributeObjects = useCanvasStore((s) => s.distributeObjects)
-  const backgroundColor = useCanvasStore((s) => s.backgroundColor)
-  const frames = useCanvasStore((s) => s.frames)
-  const ratio = useCanvasStore((s) => s.ratio)
-  const setCanvasBackground = useCanvasStore((s) => s.setCanvasBackground)
-  const setFrameBackground = useCanvasStore((s) => s.setFrameBackground)
   const textEditingId = useCanvasStore((s) => s.textEditingId)
   const textSelection = useCanvasStore((s) => s.textSelection)
   const captureTextSelection = useCanvasStore((s) => s.captureTextSelection)
@@ -1022,14 +954,7 @@ export function PropertiesPanel(): React.ReactElement {
 
         {/* Nothing selected: canvas properties */}
         {isNoneSelected && (
-          <CanvasSection
-            backgroundColor={backgroundColor}
-            frames={frames}
-            ratio={ratio}
-            onCanvasBgChange={setCanvasBackground}
-            onFrameBgChange={setFrameBackground}
-            onFrameBgClear={(frameIndex) => setFrameBackground(frameIndex, null)}
-          />
+          <CanvasSection />
         )}
 
         {/* Single object selected: per-object properties */}
@@ -1061,13 +986,30 @@ export function PropertiesPanel(): React.ReactElement {
           const shapeObj = selectedObj as ShapeObject
           return (
             <div style={{ padding: '12px 12px 0' }}>
-              <div style={sectionLabelStyle}>Transform</div>
-              <NumberField label="X" value={Math.round(shapeObj.x)} onChange={(val) => patch({ x: val })} />
-              <NumberField label="Y" value={Math.round(shapeObj.y)} onChange={(val) => patch({ y: val })} />
-              <NumberField label="Width" value={Math.round(shapeObj.width)} min={1} onChange={(val) => patch({ width: val })} />
-              <NumberField label="Height" value={Math.round(shapeObj.height)} min={1} onChange={(val) => patch({ height: val })} />
-              <NumberField label="Rotation" value={shapeObj.rotation} onChange={(val) => patch({ rotation: val })} />
-              <NumberField label="Opacity" value={shapeObj.opacity} step={0.01} min={0} max={1} onChange={(val) => patch({ opacity: val })} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Rotation</label>
+                <input
+                  type="range" min={-360} max={360} step={1}
+                  value={Math.round(shapeObj.rotation ?? 0)}
+                  onChange={e => patch({ rotation: Number(e.target.value) })}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ minWidth: 38, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
+                  {Math.round(shapeObj.rotation ?? 0)}°
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Opacity</label>
+                <input
+                  type="range" min={0} max={100} step={1}
+                  value={Math.round((shapeObj.opacity ?? 1) * 100)}
+                  onChange={e => patch({ opacity: Number(e.target.value) / 100 })}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ minWidth: 32, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
+                  {Math.round((shapeObj.opacity ?? 1) * 100)}%
+                </span>
+              </div>
               <div style={sectionLabelStyle}>Fill</div>
               <ColorInput value={shapeObj.fill || '#000000'} onChange={(color) => { commitUpdate(shapeObj.id, { fill: color }) }} />
               <div style={sectionLabelStyle}>Stroke</div>
@@ -1098,18 +1040,18 @@ export function PropertiesPanel(): React.ReactElement {
                   Path edit mode — drag anchors and handles
                 </div>
               )}
-              <div style={{ color: '#888', fontSize: 11, marginBottom: 8 }}>
-                X: {Math.round(pathObj.x)} · Y: {Math.round(pathObj.y)} · W: {Math.round(pathObj.width)} · H: {Math.round(pathObj.height)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Opacity</label>
+                <input
+                  type="range" min={0} max={100} step={1}
+                  value={Math.round((pathObj.opacity ?? 1) * 100)}
+                  onChange={e => patch({ opacity: Number(e.target.value) / 100 })}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ minWidth: 32, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
+                  {Math.round((pathObj.opacity ?? 1) * 100)}%
+                </span>
               </div>
-              <div style={sectionLabelStyle}>Opacity</div>
-              <NumberField
-                label="Opacity"
-                value={pathObj.opacity}
-                step={0.01}
-                min={0}
-                max={1}
-                onChange={(val) => patch({ opacity: val })}
-              />
               <div style={sectionLabelStyle}>Fill</div>
               <ColorInput
                 value={pathObj.fill || '#000000'}
@@ -1140,43 +1082,30 @@ export function PropertiesPanel(): React.ReactElement {
             // FRAME MODE
             return (
               <div style={{ padding: '12px 12px 0' }}>
-                <div style={{ color: '#aaa', fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em',
-                  textTransform: 'uppercase' as const, marginBottom: 6 }}>Frame</div>
-                <NumberField
-                  label="X"
-                  value={imgObj.frameX}
-                  onChange={(val) => patch({ frameX: val, x: val })}
-                />
-                <NumberField
-                  label="Y"
-                  value={imgObj.frameY}
-                  onChange={(val) => patch({ frameY: val, y: val })}
-                />
-                <NumberField
-                  label="W"
-                  value={imgObj.frameWidth}
-                  min={1}
-                  onChange={(val) => patch({ frameWidth: val, width: val })}
-                />
-                <NumberField
-                  label="H"
-                  value={imgObj.frameHeight}
-                  min={1}
-                  onChange={(val) => patch({ frameHeight: val, height: val })}
-                />
-                <NumberField
-                  label="Rotation"
-                  value={imgObj.rotation}
-                  onChange={(val) => patch({ rotation: val })}
-                />
-                <NumberField
-                  label="Opacity"
-                  value={imgObj.opacity}
-                  step={0.01}
-                  min={0}
-                  max={1}
-                  onChange={(val) => patch({ opacity: val })}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Rotation</label>
+                  <input
+                    type="range" min={-360} max={360} step={1}
+                    value={Math.round(imgObj.rotation ?? 0)}
+                    onChange={e => patch({ rotation: Number(e.target.value) })}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ minWidth: 38, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
+                    {Math.round(imgObj.rotation ?? 0)}°
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Opacity</label>
+                  <input
+                    type="range" min={0} max={100} step={1}
+                    value={Math.round((imgObj.opacity ?? 1) * 100)}
+                    onChange={e => patch({ opacity: Number(e.target.value) / 100 })}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ minWidth: 32, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
+                    {Math.round((imgObj.opacity ?? 1) * 100)}%
+                  </span>
+                </div>
                 <div style={{ color: '#555', fontSize: 11, marginTop: 8, marginBottom: 8 }}>
                   Double-click image to edit content
                 </div>

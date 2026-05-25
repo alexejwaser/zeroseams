@@ -1,5 +1,5 @@
 import React from 'react'
-import { Rect, Line, Text, Group } from 'react-konva'
+import { Rect, Line, Group } from 'react-konva'
 import { useCanvasStore } from './useCanvasStore'
 import type { Frame } from '@/types/project'
 
@@ -42,24 +42,6 @@ export function FrameGuides({ frameCount, frames, frameHeight, backgroundColor }
             stroke="red"
             strokeWidth={2}
             dash={[10, 6]}
-          />
-        )
-      })}
-
-      {/* Frame number labels centered at top of each frame */}
-      {Array.from({ length: frameCount }, (_, i) => {
-        const centerX = i * frameWidth + frameWidth / 2
-        return (
-          <Text
-            key={`label-${i}`}
-            text={String(i + 1)}
-            x={centerX - 12}
-            y={16}
-            fontSize={24}
-            fontFamily="sans-serif"
-            fill="red"
-            align="center"
-            width={24}
           />
         )
       })}

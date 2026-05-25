@@ -1,18 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useCanvasStore, PLATFORM_PRESETS } from '@/canvas/useCanvasStore'
+import { useCanvasStore } from '@/canvas/useCanvasStore'
 import { getStageInstance } from '@/canvas/CarouselStage'
 import { exportFrames, downloadFrames } from '@/canvas/exportFrames'
 import { useSaveStatusStore, type SaveStatus } from './useSaveStatusStore'
-import type { FrameRatio } from '@/types/project'
-import type { Platform } from '@/types/project'
 import type { CarouselProject } from '@/types/project'
 import type { ShapeKind } from '@/types/canvas'
 import {
   MousePointer2, Type, Square, Circle, Minus, PenTool,
   Undo2, Redo2, FolderOpen, Save, ImageDown, Scissors,
+  ChevronDown, Plus, LayoutTemplate, Check, AlertTriangle,
 } from 'lucide-react'
 import Tooltip from './Tooltip'
 import { iconBtnStyle } from './iconBtnStyle'
+import { FrameSettingsPopover } from './FrameSettingsPopover'
 
 type ActiveTool = 'select' | 'text' | 'shape' | 'pen'
 
@@ -37,26 +37,16 @@ const SNAP_ICON = (
   </svg>
 )
 
-const PLATFORM_LABELS: Record<Platform, string> = {
-  instagram: 'Instagram',
-  tiktok: 'TikTok',
-  facebook: 'Facebook',
-  threads: 'Threads',
-  custom: 'Custom',
-}
-
-const PLATFORMS: Platform[] = ['instagram', 'tiktok', 'facebook', 'threads', 'custom']
-
 function SaveStatusPill({ status }: { status: SaveStatus }): React.ReactElement | null {
   if (status === 'idle') return null
 
-  const config: Record<Exclude<SaveStatus, 'idle'>, { text: string; color: string }> = {
-    saving: { text: 'Saving…', color: '#aaa' },
-    saved: { text: '✓ Saved', color: '#4c4' },
-    error: { text: '⚠ Save failed', color: '#f55' },
+  const config: Record<Exclude<SaveStatus, 'idle'>, { icon: React.ReactElement; text: string; color: string }> = {
+    saving: { icon: <span/>, text: 'Saving…', color: '#aaa' },
+    saved: { icon: <Check size={12} strokeWidth={1.5}/>, text: ' Saved', color: '#4c4' },
+    error: { icon: <AlertTriangle size={12} strokeWidth={1.5}/>, text: ' Save failed', color: '#f55' },
   }
 
-  const { text, color } = config[status as Exclude<SaveStatus, 'idle'>]
+  const { icon, text, color } = config[status as Exclude<SaveStatus, 'idle'>]
 
   return (
     <span
@@ -65,12 +55,19 @@ function SaveStatusPill({ status }: { status: SaveStatus }): React.ReactElement 
         color,
         whiteSpace: 'nowrap',
         userSelect: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 3,
       }}
     >
-      {text}
+      {icon}{text}
     </span>
   )
 }
+
+const divider = (
+  <div style={{ width: 1, height: 20, background: '#3a3a3a', margin: '0 6px' }} />
+)
 
 export function Toolbar(): React.ReactElement {
   const activeTool = useCanvasStore((s) => s.activeTool)
@@ -82,12 +79,8 @@ export function Toolbar(): React.ReactElement {
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
   const saveStatus = useSaveStatusStore((s) => s.status)
-  const ratio = useCanvasStore((s) => s.ratio)
-  const setRatio = useCanvasStore((s) => s.setRatio)
   const frameWidth = useCanvasStore((s) => s.frameWidth)
   const frameHeight = useCanvasStore((s) => s.frameHeight)
-  const platform = useCanvasStore((s) => s.platform)
-  const setPlatform = useCanvasStore((s) => s.setPlatform)
   const resizeMode = useCanvasStore((s) => s.resizeMode)
   const setResizeMode = useCanvasStore((s) => s.setResizeMode)
   const snapEnabled = useCanvasStore((s) => s.snapEnabled)
@@ -97,7 +90,6 @@ export function Toolbar(): React.ReactElement {
   const setActiveShapeKind = useCanvasStore((s) => s.setActiveShapeKind)
   const setProjectMeta = useSaveStatusStore((s) => s.setProjectMeta)
   const projectName = useSaveStatusStore((s) => s.projectName)
-  const currentFilePath = useSaveStatusStore((s) => s.currentFilePath)
   const setCurrentFilePath = useSaveStatusStore((s) => s.setCurrentFilePath)
   const selectedId = useCanvasStore((s) => s.selectedId)
   const objects = useCanvasStore((s) => s.objects)
@@ -117,10 +109,7 @@ export function Toolbar(): React.ReactElement {
   const [recentFiles, setRecentFiles] = useState<Array<{ name: string; path: string; modifiedAt: string }>>([])
   const [loadingProject, setLoadingProject] = useState(false)
   const [saveMenuOpen, setSaveMenuOpen] = useState(false)
-
-  // Local state for custom dimension inputs
-  const [customW, setCustomW] = useState(frameWidth)
-  const [customH, setCustomH] = useState(frameHeight)
+  const [showFrameSettings, setShowFrameSettings] = useState(false)
 
   const exportWrapperRef = useRef<HTMLDivElement>(null)
   const recentWrapperRef = useRef<HTMLDivElement>(null)
@@ -129,12 +118,6 @@ export function Toolbar(): React.ReactElement {
   useEffect(() => {
     setExportTo(frameCount)
   }, [frameCount])
-
-  // Sync custom inputs when frameWidth/frameHeight change externally
-  useEffect(() => {
-    setCustomW(frameWidth)
-    setCustomH(frameHeight)
-  }, [frameWidth, frameHeight])
 
   // Dismiss export panel on outside click
   useEffect(() => {
@@ -242,20 +225,6 @@ export function Toolbar(): React.ReactElement {
     setFrameCount(frameCount + 1)
   }
 
-  function commitCustomDimensions(): void {
-    const w = Math.max(100, Math.min(8000, customW))
-    const h = Math.max(100, Math.min(8000, customH))
-    setCustomW(w)
-    setCustomH(h)
-    setRatio('custom', w, h)
-  }
-
-  function handleCustomKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
-    if (e.key === 'Enter') {
-      commitCustomDimensions()
-    }
-  }
-
   function buildProjectJson(): string {
     const state = useCanvasStore.getState()
     const saveStore = useSaveStatusStore.getState()
@@ -293,21 +262,6 @@ export function Toolbar(): React.ReactElement {
     transition: 'background 0.15s, color 0.15s',
     whiteSpace: 'nowrap' as const,
   })
-
-  const numberInputStyle: React.CSSProperties = {
-    width: 48,
-    height: 24,
-    background: '#333',
-    color: '#fff',
-    border: '1px solid #444',
-    borderRadius: 3,
-    fontSize: 12,
-    textAlign: 'center',
-    padding: '0 4px',
-    boxSizing: 'border-box',
-  }
-
-  const presets = PLATFORM_PRESETS[platform]
 
   return (
     <div
@@ -372,9 +326,11 @@ export function Toolbar(): React.ReactElement {
               borderRadius: '0 4px 4px 0',
               cursor: 'pointer',
               fontSize: 11,
+              display: 'flex',
+              alignItems: 'center',
             }}
           >
-            ▾
+            <ChevronDown size={12} strokeWidth={1.5}/>
           </button>
         </Tooltip>
 
@@ -472,9 +428,11 @@ export function Toolbar(): React.ReactElement {
               borderRadius: '0 4px 4px 0',
               cursor: 'pointer',
               fontSize: 11,
+              display: 'flex',
+              alignItems: 'center',
             }}
           >
-            ▾
+            <ChevronDown size={12} strokeWidth={1.5}/>
           </button>
         </Tooltip>
         {saveMenuOpen && (
@@ -534,15 +492,19 @@ export function Toolbar(): React.ReactElement {
         )}
       </div>
 
-      {/* Center: undo/redo + tool buttons + snap toggle */}
+      <SaveStatusPill status={saveStatus} />
+
+      {/* Center: tool groups */}
       <div
         style={{
           flex: 1,
           display: 'flex',
           justifyContent: 'center',
-          gap: 4,
+          alignItems: 'center',
+          gap: 6,
         }}
       >
+        {/* Group 1 — History */}
         <Tooltip label="Undo" shortcut="⌘Z">
           <button onClick={undo} disabled={undoDisabled} style={iconBtnStyle(false, undoDisabled)}>
             <Undo2 size={15} />
@@ -554,9 +516,9 @@ export function Toolbar(): React.ReactElement {
           </button>
         </Tooltip>
 
-        <div style={{ width: 8 }} />
+        {divider}
 
-        {/* Select */}
+        {/* Group 2 — Selection */}
         <Tooltip label="Select" shortcut="V">
           <button
             onClick={() => handleToolClick('select')}
@@ -566,7 +528,46 @@ export function Toolbar(): React.ReactElement {
           </button>
         </Tooltip>
 
-        {/* Text */}
+        <Tooltip label="Snap" shortcut="S" description="Snap to guides and objects">
+          <button
+            onClick={toggleSnap}
+            aria-pressed={snapEnabled}
+            style={{
+              width: 30,
+              height: 30,
+              background: snapEnabled ? '#0af' : '#333',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.15s',
+            }}
+          >
+            {SNAP_ICON}
+          </button>
+        </Tooltip>
+
+        <div style={{ display: 'flex', alignItems: 'center', background: '#222', border: '1px solid #444', borderRadius: 4, padding: 2, gap: 2 }}>
+          <Tooltip label="Crop mode" description="Frame clips content">
+            <button
+              onClick={() => setResizeMode('advanced')}
+              style={segmentButtonStyle(resizeMode === 'advanced')}
+            >{CROP_ICON}</button>
+          </Tooltip>
+          <Tooltip label="Auto-fill mode" description="Content fills frame on resize">
+            <button
+              onClick={() => setResizeMode('auto')}
+              style={segmentButtonStyle(resizeMode === 'auto')}
+            >{AUTOFILL_ICON}</button>
+          </Tooltip>
+        </div>
+
+        {divider}
+
+        {/* Group 3 — Create */}
         <Tooltip label="Text" shortcut="T">
           <button
             onClick={() => handleToolClick('text')}
@@ -576,7 +577,28 @@ export function Toolbar(): React.ReactElement {
           </button>
         </Tooltip>
 
-        {/* Mask — only visible when an image object is selected */}
+        <Tooltip label="Shape" shortcut="R">
+          <button
+            onClick={() => handleToolClick('shape')}
+            style={iconBtnStyle(activeTool === 'shape')}
+          >
+            {activeShapeKind === 'ellipse'
+              ? <Circle size={15} />
+              : activeShapeKind === 'line'
+              ? <Minus size={15} />
+              : <Square size={15} />}
+          </button>
+        </Tooltip>
+
+        <Tooltip label="Pen" shortcut="P">
+          <button
+            onClick={() => handleToolClick('pen')}
+            style={iconBtnStyle(activeTool === 'pen')}
+          >
+            <PenTool size={15} />
+          </button>
+        </Tooltip>
+
         {selectedObj?.type === 'image' && (
           <Tooltip label="Mask mode" description="Next stroke becomes a mask">
             <button
@@ -592,30 +614,6 @@ export function Toolbar(): React.ReactElement {
             </button>
           </Tooltip>
         )}
-
-        {/* Shape — icon reflects active sub-type */}
-        <Tooltip label="Shape" shortcut="R">
-          <button
-            onClick={() => handleToolClick('shape')}
-            style={iconBtnStyle(activeTool === 'shape')}
-          >
-            {activeShapeKind === 'ellipse'
-              ? <Circle size={15} />
-              : activeShapeKind === 'line'
-              ? <Minus size={15} />
-              : <Square size={15} />}
-          </button>
-        </Tooltip>
-
-        {/* Pen */}
-        <Tooltip label="Pen" shortcut="P">
-          <button
-            onClick={() => handleToolClick('pen')}
-            style={iconBtnStyle(activeTool === 'pen')}
-          >
-            <PenTool size={15} />
-          </button>
-        </Tooltip>
 
         {activeTool === 'shape' && (
           <div
@@ -639,150 +637,42 @@ export function Toolbar(): React.ReactElement {
                   onClick={() => { setActiveShapeKind(kind) }}
                   style={segmentButtonStyle(activeShapeKind === kind)}
                 >
-                  {kind === 'rect' ? '▭' : kind === 'ellipse' ? '⬭' : '╱'}
+                  {kind === 'rect'
+                    ? <Square size={13} strokeWidth={1.5}/>
+                    : kind === 'ellipse'
+                    ? <Circle size={13} strokeWidth={1.5}/>
+                    : <Minus size={13} strokeWidth={1.5}/>}
                 </button>
               </Tooltip>
             ))}
           </div>
         )}
 
-        <div style={{ width: 8 }} />
+        {divider}
 
-        {/* Snap toggle */}
-        <Tooltip label="Snap" shortcut="S" description="Snap to guides and objects">
+        {/* Group 4 — Frame Settings */}
+        <div style={{ position: 'relative' }}>
           <button
-            onClick={toggleSnap}
-            aria-pressed={snapEnabled}
+            onClick={() => setShowFrameSettings(v => !v)}
             style={{
-              width: 30,
-              height: 30,
-              background: snapEnabled ? '#0af' : '#333',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'background 0.15s',
-            }}
-          >
-            {SNAP_ICON}
-          </button>
-        </Tooltip>
-      </div>
-
-      {/* Right: platform selector + ratio presets + frame count + export + save status */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          paddingRight: 16,
-          flex: '0 0 auto',
-        }}
-      >
-        {/* Resize mode toggle */}
-        <div style={{ display: 'flex', gap: 2, padding: 2, background: '#222', border: '1px solid #444', borderRadius: 4, marginLeft: 8 }}>
-          <Tooltip label="Auto-fill mode" description="Content fills frame on resize">
-            <button
-              onClick={() => setResizeMode('auto')}
-              style={segmentButtonStyle(resizeMode === 'auto')}
-            >{AUTOFILL_ICON}</button>
-          </Tooltip>
-          <Tooltip label="Crop mode" description="Frame clips content">
-            <button
-              onClick={() => setResizeMode('advanced')}
-              style={segmentButtonStyle(resizeMode === 'advanced')}
-            >{CROP_ICON}</button>
-          </Tooltip>
-        </div>
-
-        {/* Platform dropdown */}
-        <select
-          value={platform}
-          onChange={(e) => { setPlatform(e.target.value as Platform) }}
-          title="Platform"
-          style={{
-            height: 28,
-            background: '#222',
-            color: '#aaa',
-            border: '1px solid #444',
-            borderRadius: 4,
-            fontSize: 12,
-            padding: '0 6px',
-            cursor: 'pointer',
-            outline: 'none',
-          }}
-        >
-          {PLATFORMS.map((p) => (
-            <option key={p} value={p}>
-              {PLATFORM_LABELS[p]}
-            </option>
-          ))}
-        </select>
-
-        {/* Ratio preset buttons */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            background: '#222',
-            borderRadius: 4,
-            padding: '2px',
-            border: '1px solid #444',
-          }}
-        >
-          {presets.map((preset) => (
-            <Tooltip key={preset.ratio} label={preset.label}>
-              <button
-                onClick={() => { setRatio(preset.ratio as FrameRatio, preset.width, preset.height) }}
-                style={segmentButtonStyle(ratio === preset.ratio)}
-              >
-                {preset.label}
-              </button>
-            </Tooltip>
-          ))}
-        </div>
-
-        {/* Custom dimension inputs — shown only for custom platform */}
-        {platform === 'custom' && (
-          <div
-            style={{
+              ...iconBtnStyle(showFrameSettings),
+              width: 'auto',
+              padding: '0 10px',
               display: 'flex',
               alignItems: 'center',
               gap: 4,
             }}
+            title="Frame Settings"
           >
-            <input
-              type="number"
-              min={100}
-              max={8000}
-              value={customW}
-              onChange={(e) => { setCustomW(Number(e.target.value)) }}
-              onBlur={commitCustomDimensions}
-              onKeyDown={handleCustomKeyDown}
-              style={{ ...numberInputStyle, width: 56 }}
-              title="Width"
-            />
-            <span style={{ color: '#666', fontSize: 12 }}>×</span>
-            <input
-              type="number"
-              min={100}
-              max={8000}
-              value={customH}
-              onChange={(e) => { setCustomH(Number(e.target.value)) }}
-              onBlur={commitCustomDimensions}
-              onKeyDown={handleCustomKeyDown}
-              style={{ ...numberInputStyle, width: 56 }}
-              title="Height"
-            />
-          </div>
-        )}
+            <LayoutTemplate size={15} strokeWidth={1.5}/>
+            <span style={{ fontSize: 12 }}>Frame Settings</span>
+          </button>
+          {showFrameSettings && <FrameSettingsPopover onClose={() => setShowFrameSettings(false)}/>}
+        </div>
 
-        <div style={{ width: 8 }} />
+        {divider}
 
+        {/* Group 5 — Frame count */}
         <span style={{ color: '#aaa', fontSize: 13 }}>Frames:</span>
         <Tooltip label="Remove frame">
           <button
@@ -796,14 +686,12 @@ export function Toolbar(): React.ReactElement {
               border: 'none',
               borderRadius: 4,
               cursor: frameCount <= 1 ? 'default' : 'pointer',
-              fontSize: 14,
-              lineHeight: '1',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            −
+            <Minus size={13} strokeWidth={1.5}/>
           </button>
         </Tooltip>
         <span
@@ -829,20 +717,18 @@ export function Toolbar(): React.ReactElement {
               border: 'none',
               borderRadius: 4,
               cursor: frameCount >= 10 ? 'default' : 'pointer',
-              fontSize: 14,
-              lineHeight: '1',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            +
+            <Plus size={13} strokeWidth={1.5}/>
           </button>
         </Tooltip>
 
-        <div style={{ width: 8 }} />
+        {divider}
 
-        {/* Export button + panel */}
+        {/* Group 6 — Export */}
         <div ref={exportWrapperRef} style={{ position: 'relative' }}>
           <Tooltip label="Export">
             <button
@@ -902,67 +788,86 @@ export function Toolbar(): React.ReactElement {
                 {(['all', 'single', 'range'] as const).map((mode) => (
                   <button
                     key={mode}
-                    onClick={() => { setExportMode(mode) }}
+                    onClick={() => setExportMode(mode)}
                     style={segmentButtonStyle(exportMode === mode)}
                   >
-                    {mode === 'all' ? 'All frames' : mode === 'single' ? 'Single' : 'Range'}
+                    {mode === 'all' ? 'All' : mode === 'single' ? 'Single' : 'Range'}
                   </button>
                 ))}
               </div>
 
-              {/* Mode-specific inputs */}
               {exportMode === 'single' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#aaa', fontSize: 12 }}>Frame</span>
+                  <label style={{ color: '#aaa', fontSize: 12 }}>Frame</label>
                   <input
                     type="number"
                     min={1}
                     max={frameCount}
                     value={exportSingle}
-                    onChange={(e) => {
-                      const v = Math.max(1, Math.min(frameCount, Number(e.target.value)))
-                      setExportSingle(v)
+                    onChange={(e) => setExportSingle(Number(e.target.value))}
+                    style={{
+                      width: 48,
+                      height: 24,
+                      background: '#333',
+                      color: '#fff',
+                      border: '1px solid #444',
+                      borderRadius: 3,
+                      fontSize: 12,
+                      textAlign: 'center',
+                      padding: '0 4px',
                     }}
-                    style={numberInputStyle}
                   />
                 </div>
               )}
 
               {exportMode === 'range' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#aaa', fontSize: 12 }}>From</span>
+                  <label style={{ color: '#aaa', fontSize: 12 }}>From</label>
                   <input
                     type="number"
                     min={1}
                     max={frameCount}
                     value={exportFrom}
-                    onChange={(e) => {
-                      const v = Math.max(1, Math.min(frameCount, Number(e.target.value)))
-                      setExportFrom(v)
+                    onChange={(e) => setExportFrom(Number(e.target.value))}
+                    style={{
+                      width: 48,
+                      height: 24,
+                      background: '#333',
+                      color: '#fff',
+                      border: '1px solid #444',
+                      borderRadius: 3,
+                      fontSize: 12,
+                      textAlign: 'center',
+                      padding: '0 4px',
                     }}
-                    style={numberInputStyle}
                   />
-                  <span style={{ color: '#aaa', fontSize: 12 }}>To</span>
+                  <label style={{ color: '#aaa', fontSize: 12 }}>To</label>
                   <input
                     type="number"
                     min={1}
                     max={frameCount}
                     value={exportTo}
-                    onChange={(e) => {
-                      const v = Math.max(1, Math.min(frameCount, Number(e.target.value)))
-                      setExportTo(v)
+                    onChange={(e) => setExportTo(Number(e.target.value))}
+                    style={{
+                      width: 48,
+                      height: 24,
+                      background: '#333',
+                      color: '#fff',
+                      border: '1px solid #444',
+                      borderRadius: 3,
+                      fontSize: 12,
+                      textAlign: 'center',
+                      padding: '0 4px',
                     }}
-                    style={numberInputStyle}
                   />
                 </div>
               )}
 
-              {/* Export action button */}
               <button
                 onClick={() => { void handleExportAction() }}
                 disabled={exporting}
                 style={{
-                  padding: '6px 0',
+                  height: 32,
                   background: exporting ? '#555' : '#0af',
                   color: '#fff',
                   border: 'none',
@@ -970,30 +875,11 @@ export function Toolbar(): React.ReactElement {
                   cursor: exporting ? 'default' : 'pointer',
                   fontSize: 13,
                   fontWeight: 'bold',
-                  transition: 'background 0.15s',
                 }}
               >
-                {exporting ? 'Exporting…' : 'Export'}
+                {exporting ? 'Exporting…' : 'Export Frames'}
               </button>
             </div>
-          )}
-        </div>
-
-        {/* Save status pill + current file name */}
-        <div
-          style={{
-            minWidth: 80,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: 6,
-          }}
-        >
-          <SaveStatusPill status={saveStatus} />
-          {currentFilePath && (
-            <span style={{ color: '#666', fontSize: 11, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {currentFilePath.split('/').pop()}
-            </span>
           )}
         </div>
       </div>

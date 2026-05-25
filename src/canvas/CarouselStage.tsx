@@ -59,6 +59,7 @@ export function CarouselStage(): React.ReactElement {
   const snapEnabled = useCanvasStore((s) => s.snapEnabled)
   const maskModeActive = useCanvasStore((s) => s.maskModeActive)
   const enterMaskDrawMode = useCanvasStore((s) => s.enterMaskDrawMode)
+  const setFrameBackground = useCanvasStore((s) => s.setFrameBackground)
 
   // Viewport store
   const zoom = useViewportStore((s) => s.zoom)
@@ -74,6 +75,10 @@ export function CarouselStage(): React.ReactElement {
   const nodeRefMapRef = useRef<Map<string, React.RefObject<Konva.Node>>>(new Map())
   const syncRefMapRef = useRef<Map<string, React.MutableRefObject<(() => void) | null>>>(new Map())
   const syncGroupRefMapRef = useRef<Map<string, React.MutableRefObject<(() => void) | null>>>(new Map())
+  const swatchInputRefs = useRef<Array<React.RefObject<HTMLInputElement>>>([])
+  if (swatchInputRefs.current.length !== frameCount) {
+    swatchInputRefs.current = Array.from({ length: frameCount }, () => React.createRef<HTMLInputElement>())
+  }
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const marqueeStartRef = useRef<{ x: number; y: number } | null>(null)
   const marqueeCurrentRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -562,6 +567,76 @@ export function CarouselStage(): React.ReactElement {
       onMouseUp={handleContainerMouseUp}
       onMouseLeave={handleContainerMouseUp}
     >
+      {/* Frame labels + colour swatches — follow the canvas viewport */}
+      {Array.from({ length: frameCount }).map((_, i) => {
+        const frameColor = frames[i]?.backgroundColor ?? null
+        const displayColor = frameColor ?? backgroundColor
+        const labelX = panX + i * frameWidth * (CANVAS_SCALE * zoom)
+        const labelTop = Math.max(4, panY - 22)
+        return (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: labelX,
+              top: labelTop,
+              zIndex: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              pointerEvents: 'auto',
+            }}
+          >
+            {/* Colour swatch */}
+            <div
+              onClick={() => swatchInputRefs.current[i]?.current?.click()}
+              title="Set frame background colour"
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 2,
+                background: displayColor,
+                border: '1px solid #555',
+                cursor: 'pointer',
+                position: 'relative',
+                flexShrink: 0,
+                overflow: 'hidden',
+              }}
+            >
+              {!frameColor && (
+                <svg width="14" height="14" style={{ position: 'absolute', inset: 0 }} viewBox="0 0 14 14">
+                  <line x1="0" y1="14" x2="14" y2="0" stroke="#f00" strokeWidth="1.5"/>
+                </svg>
+              )}
+              <input
+                ref={swatchInputRefs.current[i]}
+                type="color"
+                value={displayColor}
+                onChange={e => setFrameBackground(i, e.target.value)}
+                style={{ opacity: 0, position: 'absolute', width: 0, height: 0, pointerEvents: 'none' }}
+              />
+            </div>
+            {/* Reset button — only visible when frame has a custom colour */}
+            {frameColor && (
+              <button
+                onClick={e => { e.stopPropagation(); setFrameBackground(i, null) }}
+                title="Reset to canvas background"
+                style={{
+                  background: 'none', border: 'none', color: '#888',
+                  cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1,
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                ×
+              </button>
+            )}
+            {/* Frame label */}
+            <span style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap', userSelect: 'none' }}>
+              Frame {i + 1}
+            </span>
+          </div>
+        )
+      })}
       <Stage
         ref={stageRef}
         width={containerSize.width}
