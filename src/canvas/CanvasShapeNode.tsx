@@ -12,7 +12,7 @@ import type { ShapeObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
-import { CANVAS_SCALE } from './constants'
+import { CANVAS_SCALE, axisLock } from './constants'
 import { useViewportStore } from './useViewportStore'
 
 interface CanvasShapeNodeProps {
@@ -168,6 +168,18 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
       rawX = node.x()
       rawY = node.y()
     }
+    if (e.evt.shiftKey) {
+      const { dx, dy } = axisLock(rawX - dragStartXRef.current, rawY - dragStartYRef.current)
+      rawX = dragStartXRef.current + dx
+      rawY = dragStartYRef.current + dy
+      if (obj.kind === 'ellipse') {
+        node.x(rawX + obj.width / 2)
+        node.y(rawY + obj.height / 2)
+      } else {
+        node.x(rawX)
+        node.y(rawY)
+      }
+    }
     const { x: snappedX, y: snappedY, guides } = computeSnap(
       { x: rawX, y: rawY, width: obj.width, height: obj.height },
       obj.id,
@@ -225,9 +237,13 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
 
   function handleLineDragMove(e: Konva.KonvaEventObject<DragEvent>): void {
     const node = e.target as Konva.Line
-    const dx = node.x(); const dy = node.y()
+    let dx = node.x(); let dy = node.y()
     const origin = lineDragOriginRef.current
     if (!origin) return
+    if (e.evt.shiftKey) {
+      const locked = axisLock(dx, dy)
+      dx = locked.dx; dy = locked.dy
+    }
     const newX1 = origin.x1 + dx; const newY1 = origin.y1 + dy
     const newX2 = origin.x2 + dx; const newY2 = origin.y2 + dy
     node.x(0); node.y(0)

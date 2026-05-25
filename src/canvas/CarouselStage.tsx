@@ -3,7 +3,7 @@ import { Stage, Layer, Rect as KonvaRect, Line as KonvaLine, Circle as KonvaCirc
 import type Konva from 'konva'
 import type { ImageObject, TextObject, ShapeObject, PathObject, AnchorPoint, CanvasObject } from '@/types/canvas'
 import type { ShapeKind } from '@/types/canvas'
-import { CANVAS_SCALE } from './constants'
+import { CANVAS_SCALE, axisLock } from './constants'
 import { useCanvasStore } from './useCanvasStore'
 import { useViewportStore } from './useViewportStore'
 import { FrameGuides } from './FrameGuides'
@@ -69,6 +69,8 @@ export function CarouselStage(): React.ReactElement {
 
   // --- Group transformer + marquee ---
   const groupTransformerRef = useRef<Konva.Transformer>(null)
+  const groupTransformerDragStartRef = useRef<{ x: number; y: number } | null>(null)
+  const shiftHeldRef = useRef(false)
   const nodeRefMapRef = useRef<Map<string, React.RefObject<Konva.Node>>>(new Map())
   const syncRefMapRef = useRef<Map<string, React.MutableRefObject<(() => void) | null>>>(new Map())
   const syncGroupRefMapRef = useRef<Map<string, React.MutableRefObject<(() => void) | null>>>(new Map())
@@ -178,6 +180,18 @@ export function CarouselStage(): React.ReactElement {
     })
     ro.observe(el)
     return () => ro.disconnect()
+  }, [])
+
+  // Track Shift key state for group transformer axis lock (dragBoundFunc has no event access)
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent): void => { if (e.shiftKey) shiftHeldRef.current = true }
+    const onUp = (e: KeyboardEvent): void => { if (!e.shiftKey) shiftHeldRef.current = false }
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
+    }
   }, [])
 
   // Space key — pan mode
@@ -703,8 +717,12 @@ export function CarouselStage(): React.ReactElement {
             const stage = stageRef.current
             const pos = stage?.getRelativePointerPosition()
             if (pos) {
-              const dx = pos.x - multiSelectDragStartRef.current.x
-              const dy = pos.y - multiSelectDragStartRef.current.y
+              let dx = pos.x - multiSelectDragStartRef.current.x
+              let dy = pos.y - multiSelectDragStartRef.current.y
+              if (e.evt.shiftKey) {
+                const locked = axisLock(dx, dy)
+                dx = locked.dx; dy = locked.dy
+              }
               if (Math.sqrt(dx * dx + dy * dy) > 3) {
                 multiSelectDragActiveRef.current = true
                 const objs = useCanvasStore.getState().objects
@@ -1124,9 +1142,19 @@ export function CarouselStage(): React.ReactElement {
             anchorStroke="#0096ff"
             anchorSize={8}
             onTransformEnd={handleGroupTransformEnd}
+            onDragStart={() => {
+              const tr = groupTransformerRef.current
+              if (tr) groupTransformerDragStartRef.current = { x: tr.x(), y: tr.y() }
+            }}
             onDragEnd={handleGroupDragEnd}
             onTransform={handleGroupTransformLive}
             onDragMove={handleGroupDragLive}
+            dragBoundFunc={(pos) => {
+              const start = groupTransformerDragStartRef.current
+              if (!start || !shiftHeldRef.current) return pos
+              const { dx, dy } = axisLock(pos.x - start.x, pos.y - start.y)
+              return { x: start.x + dx, y: start.y + dy }
+            }}
             boundBoxFunc={(oldBox, newBox) => {
               if (newBox.width < 5 || newBox.height < 5) return oldBox
               const anchor = groupTransformerRef.current?.getActiveAnchor() ?? ''

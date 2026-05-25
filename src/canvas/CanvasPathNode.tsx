@@ -10,6 +10,7 @@ import type { PathObject, AnchorPoint, CanvasObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
+import { axisLock } from './constants'
 
 // ---------------------------------------------------------------------------
 // Path utilities — exported for use in CarouselStage pen tool
@@ -198,8 +199,12 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
 
   function handleDragMove(e: Konva.KonvaEventObject<DragEvent>): void {
     const node = e.target as Konva.Path
-    const dx = node.x(); const dy = node.y()
+    let dx = node.x(); let dy = node.y()
     if (!dragStartRef.current) return
+    if (e.evt.shiftKey) {
+      const locked = axisLock(dx, dy)
+      dx = locked.dx; dy = locked.dy
+    }
     const newAnchors = dragStartRef.current.anchors.map((a) => ({ ...a, x: a.x + dx, y: a.y + dy }))
     const bbox = computePathBBox(newAnchors)
     node.x(0); node.y(0)

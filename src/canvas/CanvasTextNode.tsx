@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react'
 import { Text as KonvaText, Rect, Transformer } from 'react-konva'
 import type Konva from 'konva'
 import type { TextObject, TextSpan, CanvasObject } from '@/types/canvas'
-import { CANVAS_SCALE } from './constants'
+import { CANVAS_SCALE, axisLock } from './constants'
 import { useCanvasStore } from './useCanvasStore'
 import { useViewportStore } from './useViewportStore'
 import { useSnapGuides } from './useSnapGuides'
@@ -566,8 +566,16 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
         }}
         onDragMove={(e) => {
           const dragNode = e.target as Konva.Text
-          const rawX = dragNode.x()
-          const rawY = dragNode.y()
+          let rawX = dragNode.x()
+          let rawY = dragNode.y()
+
+          if (e.evt.shiftKey) {
+            const { dx, dy } = axisLock(rawX - dragStartXRef.current, rawY - dragStartYRef.current)
+            rawX = dragStartXRef.current + dx
+            rawY = dragStartYRef.current + dy
+            dragNode.x(rawX)
+            dragNode.y(rawY)
+          }
 
           const { x: snappedX, y: snappedY, guides } = computeSnap(
             { x: rawX, y: rawY, width: obj.width, height: obj.height },

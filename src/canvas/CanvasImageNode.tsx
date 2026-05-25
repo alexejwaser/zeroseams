@@ -7,7 +7,7 @@ import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { anchorsToPathData } from './CanvasPathNode'
-import { CANVAS_SCALE } from './constants'
+import { CANVAS_SCALE, axisLock } from './constants'
 import { useViewportStore } from './useViewportStore'
 
 interface CanvasImageNodeProps {
@@ -54,6 +54,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const altHeldRef = useRef(false)
   const dragStartFrameXRef = useRef(0)
   const dragStartFrameYRef = useRef(0)
+  const contentDragStartRef = useRef<{ x: number; y: number } | null>(null)
   const pendingDuplicateRef = useRef(false)
 
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
@@ -314,8 +315,16 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
 
   function handleFrameDragMove(e: Konva.KonvaEventObject<DragEvent>): void {
     const rect = e.target as Konva.Rect
-    const rawX = rect.x()
-    const rawY = rect.y()
+    let rawX = rect.x()
+    let rawY = rect.y()
+
+    if (e.evt.shiftKey) {
+      const { dx, dy } = axisLock(rawX - dragStartFrameXRef.current, rawY - dragStartFrameYRef.current)
+      rawX = dragStartFrameXRef.current + dx
+      rawY = dragStartFrameYRef.current + dy
+      rect.x(rawX)
+      rect.y(rawY)
+    }
 
     const { x: snappedX, y: snappedY, guides } = computeSnap(
       { x: rawX, y: rawY, width: obj.frameWidth, height: obj.frameHeight },
@@ -520,6 +529,18 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
             draggable={obj.contentEditMode && !obj.locked}
             onClick={() => { if (obj.contentEditMode) onSelect() }}
             onTap={() => { if (obj.contentEditMode) onSelect() }}
+            onDragStart={() => {
+              contentDragStartRef.current = { x: obj.contentOffsetX, y: obj.contentOffsetY }
+            }}
+            onDragMove={(e) => {
+              const node = e.target as Konva.Image
+              const start = contentDragStartRef.current
+              if (e.evt.shiftKey && start) {
+                const { dx, dy } = axisLock(node.x() - start.x, node.y() - start.y)
+                node.x(start.x + dx)
+                node.y(start.y + dy)
+              }
+            }}
             onDragEnd={handleContentDragEnd}
             onTransformEnd={handleContentTransformEnd}
           />
