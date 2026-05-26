@@ -18,6 +18,47 @@ import { iconBtnStyle } from './iconBtnStyle'
 import { PenTool, Square, Circle, Trash2, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
+// rotateAroundCenter — pure utility
+// Konva positions rects/text at top-left (x, y) and rotates around that point.
+// To rotate around the visual center, compute where the center is in canvas
+// space given the current rotation, then find the new top-left that keeps the
+// center at that same canvas-space point with the new rotation angle.
+// Ellipses are exempt: Konva renders them at their CENTER, so they already
+// rotate around the center — no fix needed.
+// ---------------------------------------------------------------------------
+
+function rotateAroundCenter(
+  x: number, y: number, w: number, h: number,
+  oldRotDeg: number, newRotDeg: number,
+): { x: number; y: number; rotation: number } {
+  const oldR = (oldRotDeg * Math.PI) / 180
+  const newR = (newRotDeg * Math.PI) / 180
+  const hw = w / 2, hh = h / 2
+  const cx = x + hw * Math.cos(oldR) - hh * Math.sin(oldR)
+  const cy = y + hw * Math.sin(oldR) + hh * Math.cos(oldR)
+  return {
+    rotation: newRotDeg,
+    x: cx - (hw * Math.cos(newR) - hh * Math.sin(newR)),
+    y: cy - (hw * Math.sin(newR) + hh * Math.cos(newR)),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared inline style for the small numeric inputs next to sliders
+// ---------------------------------------------------------------------------
+
+const numInputStyle = (width: number): React.CSSProperties => ({
+  width,
+  fontSize: 11,
+  background: '#222',
+  color: '#ccc',
+  border: '1px solid #444',
+  borderRadius: 3,
+  padding: '0 4px',
+  textAlign: 'right',
+})
+
+// ---------------------------------------------------------------------------
 // NumberField — normal (always has a value)
 // ---------------------------------------------------------------------------
 
@@ -633,21 +674,38 @@ function TextSection({
 
   return (
     <div style={{ padding: '12px 12px 0' }}>
-      {/* Rotation slider */}
+      {/* Rotation slider + numeric input */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
         <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Rotation</label>
         <input
           type="range" min={-360} max={360} step={1}
           value={Math.round(textObj.rotation ?? 0)}
-          onChange={e => onCommit(selectedId, { rotation: Number(e.target.value) } as Partial<TextObject>)}
+          onChange={e => {
+            const newRot = Number(e.target.value)
+            const { x, y, rotation } = rotateAroundCenter(
+              textObj.x, textObj.y, textObj.width, textObj.height,
+              textObj.rotation ?? 0, newRot,
+            )
+            onCommit(selectedId, { rotation, x, y } as Partial<TextObject>)
+          }}
           style={{ flex: 1 }}
         />
-        <span style={{ minWidth: 38, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
-          {Math.round(textObj.rotation ?? 0)}°
-        </span>
+        <input
+          type="number" min={-360} max={360} step={1}
+          value={Math.round(textObj.rotation ?? 0)}
+          onChange={e => {
+            const newRot = Math.max(-360, Math.min(360, Number(e.target.value)))
+            const { x, y, rotation } = rotateAroundCenter(
+              textObj.x, textObj.y, textObj.width, textObj.height,
+              textObj.rotation ?? 0, newRot,
+            )
+            onCommit(selectedId, { rotation, x, y } as Partial<TextObject>)
+          }}
+          style={numInputStyle(48)}
+        />
       </div>
 
-      {/* Opacity slider */}
+      {/* Opacity slider + numeric input */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
         <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Opacity</label>
         <input
@@ -656,9 +714,15 @@ function TextSection({
           onChange={e => onCommit(selectedId, { opacity: Number(e.target.value) / 100 } as Partial<TextObject>)}
           style={{ flex: 1 }}
         />
-        <span style={{ minWidth: 32, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
-          {Math.round((textObj.opacity ?? 1) * 100)}%
-        </span>
+        <input
+          type="number" min={0} max={100} step={1}
+          value={Math.round((textObj.opacity ?? 1) * 100)}
+          onChange={e => {
+            const v = Math.max(0, Math.min(100, Number(e.target.value)))
+            onCommit(selectedId, { opacity: v / 100 } as Partial<TextObject>)
+          }}
+          style={numInputStyle(44)}
+        />
       </div>
 
       {/* Inline edit mode banner / hint */}
@@ -986,18 +1050,43 @@ export function PropertiesPanel(): React.ReactElement {
           const shapeObj = selectedObj as ShapeObject
           return (
             <div style={{ padding: '12px 12px 0' }}>
+              {/* Rotation slider + numeric input */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Rotation</label>
                 <input
                   type="range" min={-360} max={360} step={1}
                   value={Math.round(shapeObj.rotation ?? 0)}
-                  onChange={e => patch({ rotation: Number(e.target.value) })}
+                  onChange={e => {
+                    const newRot = Number(e.target.value)
+                    if (shapeObj.kind === 'ellipse') {
+                      commitUpdate(shapeObj.id, { rotation: newRot })
+                    } else {
+                      commitUpdate(shapeObj.id, rotateAroundCenter(
+                        shapeObj.x, shapeObj.y, shapeObj.width, shapeObj.height,
+                        shapeObj.rotation ?? 0, newRot,
+                      ))
+                    }
+                  }}
                   style={{ flex: 1 }}
                 />
-                <span style={{ minWidth: 38, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
-                  {Math.round(shapeObj.rotation ?? 0)}°
-                </span>
+                <input
+                  type="number" min={-360} max={360} step={1}
+                  value={Math.round(shapeObj.rotation ?? 0)}
+                  onChange={e => {
+                    const newRot = Math.max(-360, Math.min(360, Number(e.target.value)))
+                    if (shapeObj.kind === 'ellipse') {
+                      commitUpdate(shapeObj.id, { rotation: newRot })
+                    } else {
+                      commitUpdate(shapeObj.id, rotateAroundCenter(
+                        shapeObj.x, shapeObj.y, shapeObj.width, shapeObj.height,
+                        shapeObj.rotation ?? 0, newRot,
+                      ))
+                    }
+                  }}
+                  style={numInputStyle(48)}
+                />
               </div>
+              {/* Opacity slider + numeric input */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Opacity</label>
                 <input
@@ -1006,9 +1095,15 @@ export function PropertiesPanel(): React.ReactElement {
                   onChange={e => patch({ opacity: Number(e.target.value) / 100 })}
                   style={{ flex: 1 }}
                 />
-                <span style={{ minWidth: 32, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
-                  {Math.round((shapeObj.opacity ?? 1) * 100)}%
-                </span>
+                <input
+                  type="number" min={0} max={100} step={1}
+                  value={Math.round((shapeObj.opacity ?? 1) * 100)}
+                  onChange={e => {
+                    const v = Math.max(0, Math.min(100, Number(e.target.value)))
+                    commitUpdate(shapeObj.id, { opacity: v / 100 })
+                  }}
+                  style={numInputStyle(44)}
+                />
               </div>
               <div style={sectionLabelStyle}>Fill</div>
               <ColorInput value={shapeObj.fill || '#000000'} onChange={(color) => { commitUpdate(shapeObj.id, { fill: color }) }} />
@@ -1082,18 +1177,37 @@ export function PropertiesPanel(): React.ReactElement {
             // FRAME MODE
             return (
               <div style={{ padding: '12px 12px 0' }}>
+                {/* Rotation slider + numeric input */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                   <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Rotation</label>
                   <input
                     type="range" min={-360} max={360} step={1}
                     value={Math.round(imgObj.rotation ?? 0)}
-                    onChange={e => patch({ rotation: Number(e.target.value) })}
+                    onChange={e => {
+                      const newRot = Number(e.target.value)
+                      const { x: fx, y: fy, rotation } = rotateAroundCenter(
+                        imgObj.frameX, imgObj.frameY, imgObj.frameWidth, imgObj.frameHeight,
+                        imgObj.rotation ?? 0, newRot,
+                      )
+                      commitUpdate(imgObj.id, { rotation, frameX: fx, frameY: fy, x: fx, y: fy })
+                    }}
                     style={{ flex: 1 }}
                   />
-                  <span style={{ minWidth: 38, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
-                    {Math.round(imgObj.rotation ?? 0)}°
-                  </span>
+                  <input
+                    type="number" min={-360} max={360} step={1}
+                    value={Math.round(imgObj.rotation ?? 0)}
+                    onChange={e => {
+                      const newRot = Math.max(-360, Math.min(360, Number(e.target.value)))
+                      const { x: fx, y: fy, rotation } = rotateAroundCenter(
+                        imgObj.frameX, imgObj.frameY, imgObj.frameWidth, imgObj.frameHeight,
+                        imgObj.rotation ?? 0, newRot,
+                      )
+                      commitUpdate(imgObj.id, { rotation, frameX: fx, frameY: fy, x: fx, y: fy })
+                    }}
+                    style={numInputStyle(48)}
+                  />
                 </div>
+                {/* Opacity slider + numeric input */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                   <label style={{ color: '#aaa', fontSize: 12, width: 64, flexShrink: 0 }}>Opacity</label>
                   <input
@@ -1102,9 +1216,15 @@ export function PropertiesPanel(): React.ReactElement {
                     onChange={e => patch({ opacity: Number(e.target.value) / 100 })}
                     style={{ flex: 1 }}
                   />
-                  <span style={{ minWidth: 32, textAlign: 'right', fontSize: 11, color: '#aaa' }}>
-                    {Math.round((imgObj.opacity ?? 1) * 100)}%
-                  </span>
+                  <input
+                    type="number" min={0} max={100} step={1}
+                    value={Math.round((imgObj.opacity ?? 1) * 100)}
+                    onChange={e => {
+                      const v = Math.max(0, Math.min(100, Number(e.target.value)))
+                      commitUpdate(imgObj.id, { opacity: v / 100 })
+                    }}
+                    style={numInputStyle(44)}
+                  />
                 </div>
                 <div style={{ color: '#555', fontSize: 11, marginTop: 8, marginBottom: 8 }}>
                   Double-click image to edit content

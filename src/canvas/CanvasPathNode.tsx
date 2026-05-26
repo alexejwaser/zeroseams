@@ -10,7 +10,8 @@ import type { PathObject, AnchorPoint, CanvasObject } from '@/types/canvas'
 import { useCanvasStore } from './useCanvasStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
-import { axisLock } from './constants'
+import { CANVAS_SCALE, axisLock } from './constants'
+import { useViewportStore } from './useViewportStore'
 
 // ---------------------------------------------------------------------------
 // Path utilities — exported for use in CarouselStage pen tool
@@ -122,7 +123,10 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
   const isInMultiSelectMode = selectedIds.length > 1
   const isAnchor = anchorId === obj.id
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
-  const { computeSnap } = useSnapGuides()
+  const { computeSnapResize } = useSnapGuides()
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled)
+  const { zoom, panX, panY } = useViewportStore((s) => ({ zoom: s.zoom, panX: s.panX, panY: s.panY }))
+  const pendingGuidesRef = useRef<SnapGuide[]>([])
 
   const altHeldRef = useRef(false)
   const dragStartRef = useRef<{ anchors: AnchorPoint[] } | null>(null)
@@ -146,7 +150,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
     }
   })
 
-  // Wire transformer — path gets a selection-only transformer (no resize anchors); suppress in multi-select mode
+  // Wire transformer — full resize + rotation; suppress in multi-select mode
   useEffect(() => {
     const tr = transformerRef.current
     const node = pathRef.current
@@ -158,8 +162,12 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
     }
     if (isSelected && !obj.pathEditMode && !obj.locked) {
       tr.nodes([node])
-      tr.enabledAnchors([])
-      tr.rotateEnabled(false)
+      tr.enabledAnchors([
+        'top-left', 'top-center', 'top-right', 'middle-right',
+        'bottom-right', 'bottom-center', 'bottom-left', 'middle-left',
+      ])
+      tr.keepRatio(true)
+      tr.rotateEnabled(true)
       tr.getLayer()?.batchDraw()
     } else {
       tr.nodes([])
@@ -341,6 +349,38 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
     } as Partial<PathObject> as Partial<CanvasObject>)
   }
 
+  // --- Transform end: bake affine matrix into anchor coordinates ---
+  // The Transformer accumulates scale + rotation on the KonvaPath node.
+  // On commit, we apply node.getTransform() to every anchor point and handle,
+  // then reset the node back to x=0, y=0, scale=1, rotation=0 so that anchor
+  // coords remain the single source of truth (as they are during drag/edit).
+
+  function handleTransformEnd(): void {
+    const node = pathRef.current
+    if (!node) return
+    const t = node.getTransform()
+    const origin = t.point({ x: 0, y: 0 })
+    const newAnchors = obj.anchors.map((a) => {
+      const pt = t.point({ x: a.x, y: a.y })
+      const hi = t.point({ x: a.handleIn.dx, y: a.handleIn.dy })
+      const ho = t.point({ x: a.handleOut.dx, y: a.handleOut.dy })
+      return {
+        ...a,
+        x: pt.x, y: pt.y,
+        handleIn: { dx: hi.x - origin.x, dy: hi.y - origin.y },
+        handleOut: { dx: ho.x - origin.x, dy: ho.y - origin.y },
+      }
+    })
+    node.x(0); node.y(0); node.scaleX(1); node.scaleY(1); node.rotation(0)
+    const bbox = computePathBBox(newAnchors)
+    onGuidesChange([])
+    commitUpdate(obj.id, {
+      anchors: newAnchors,
+      x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height,
+      rotation: 0,
+    } as Partial<PathObject> as Partial<CanvasObject>)
+  }
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -382,8 +422,34 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
         />
         <Transformer
           ref={transformerRef}
-          keepRatio={false}
-          boundBoxFunc={(old, box) => (box.width < 5 || box.height < 5 ? old : box)}
+          keepRatio={true}
+          rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
+          rotationSnapTolerance={8}
+          onTransformEnd={handleTransformEnd}
+          boundBoxFunc={(oldBox, newBox) => {
+            if (newBox.width < 5 || newBox.height < 5) return oldBox
+            const anchor = transformerRef.current?.getActiveAnchor() ?? ''
+            if (anchor === 'rotater') return newBox
+            if (Math.abs(newBox.rotation ?? 0) > 0.01 || !anchor) return newBox
+            const scale = CANVAS_SCALE * zoom
+            const logicalBox = {
+              x: (newBox.x - panX) / scale,
+              y: (newBox.y - panY) / scale,
+              width: newBox.width / scale,
+              height: newBox.height / scale,
+            }
+            const { box: snapped, guides } = computeSnapResize(
+              logicalBox, anchor, obj.id, 8 / scale, true,
+            )
+            pendingGuidesRef.current = guides
+            return {
+              x: snapped.x * scale + panX,
+              y: snapped.y * scale + panY,
+              width: snapped.width * scale,
+              height: snapped.height * scale,
+              rotation: newBox.rotation,
+            }
+          }}
         />
       </>
     )
