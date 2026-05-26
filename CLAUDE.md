@@ -1,5 +1,19 @@
 # Zero Seams — AI Dev Guide
 
+## Knowledge Graph (`graphify-out/`)
+A queryable knowledge graph of the codebase lives in `graphify-out/`. Use it before exploring code manually.
+
+- **Query:** `graphify query "<question>"` — BFS traversal, no re-extraction, answers from graph structure
+- **Update after code changes:** `graphify update ./src` — incremental, only re-extracts changed files
+- **Rebuild from scratch:** `/graphify` in Claude Code
+
+Key god nodes (highest edge count — touch these carefully):
+- `useCanvasStore` (39 edges) — owns all canvas state; every node, panel, and AI hook reads/writes it
+- `buildFilterPipeline` (18 edges) — called on every image node render; LUT-cached but closure refs are new per call (see issue #37)
+- `CarouselStage` (16 edges) — canvas composition root; mounts all node components
+
+Main communities: Canvas Node Components · UI Architecture Concepts · Electron IPC & Save System · Photo Filter Pipeline · AI Subsystem · Type System & Text Utilities · E2E Test Infrastructure
+
 ## What this is
 Desktop Electron app for seamless Instagram carousels. One long horizontal canvas sliced into Instagram frames.
 
