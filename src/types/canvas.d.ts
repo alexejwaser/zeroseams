@@ -44,6 +44,7 @@ export interface ImageObject extends BaseCanvasObject {
     /** When true, mask anchor overlay is shown and editable */
     maskEditMode: boolean;
     mask?: MaskData;
+    adjustments?: PhotoAdjustments;
 }
 /** Closed bezier path that clips the visible area of an image. Anchors are in content space. */
 export interface MaskData {
@@ -56,6 +57,21 @@ export interface MaskData {
     /** Toggle mask on/off without deleting it */
     visible: boolean;
 }
+export interface PhotoAdjustments {
+    exposure: number;
+    contrast: number;
+    highlights: number;
+    shadows: number;
+    whites: number;
+    blacks: number;
+    temperature: number;
+    tint: number;
+    saturation: number;
+    vibrance: number;
+    clarity: number;
+    dehaze: number;
+}
+export declare const DEFAULT_ADJUSTMENTS: PhotoAdjustments;
 export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold italic';
 /** Per-character style overrides — undefined fields inherit from TextObject layer defaults */
 export interface TextSpanStyle {

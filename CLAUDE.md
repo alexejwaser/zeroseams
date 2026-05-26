@@ -1,114 +1,72 @@
 # Zero Seams — AI Dev Guide
 
 ## What this is
-Desktop Electron app for creating seamless Instagram carousels. One long horizontal canvas sliced into Instagram frames. Simple enough for quick social posts, precise enough for real design work.
+Desktop Electron app for seamless Instagram carousels. One long horizontal canvas sliced into Instagram frames.
 
 ## Tech Stack
-- Electron + React + TypeScript
-- Konva.js / react-konva (canvas engine)
-- Zustand (state management)
-- @imgly/background-removal (on-device AI, WASM)
-- ONNX Runtime (SAM segmentation, LaMa inpainting)
+Electron + React + TypeScript · Konva.js/react-konva · Zustand · @imgly/background-removal (WASM) · ONNX Runtime (SAM/LaMa)
 
 ## Core Concepts — never break these
 - Canvas = one long surface, N frames wide
-- A "frame" = one Instagram slide — 1080×1080 (square) or 1080×1350 (portrait); controlled by `ratio` in store
+- Frame = one Instagram slide — 1080×1080 or 1080×1350; controlled by `ratio` in store
 - `frameHeight` is dynamic — always read from store, never hardcode it
 - Objects are `global` (span canvas freely) or `pinned` (locked to a frame)
-- Export = slice canvas at frame boundaries → array of PNGs via Electron IPC (not anchor downloads)
+- Export = slice canvas at frame boundaries → array of PNGs via Electron IPC
 
 ## File Ownership
-- `src/canvas/` — canvas-agent only
-- `src/ui/` — ui-agent only
-- `src/ai/` — ai-agent only
-- `src/electron/` — electron-agent only
-- `src/store/` — shared, coordinate before editing
+- `src/canvas/` — canvas-agent · `src/ui/` — ui-agent · `src/ai/` — ai-agent
+- `src/electron/` — electron-agent · `src/store/` — shared, coordinate before editing
 
-## Key Architecture Decisions
+## Key Architecture
 
-**Image Frame/Content Model (InDesign-style)**
-Two-layer model — never collapse:
-- Frame (`frameX/Y`, `frameWidth/Height`) = visible crop viewport; `x/y/width/height` kept in sync for compatibility
-- Content (`contentOffsetX/Y`, `contentWidth/Height`) = image bitmap floating inside frame
-- `naturalWidth/naturalHeight` on `ImageObject` = intrinsic pixel dims of the original bitmap (set at drop time, never changes)
-- `contentEditMode: boolean` — false=frame transformer (blue), true=double-click enters content mode (orange #ff7043)
+**Image Frame/Content Model** — two-layer, never collapse:
+- Frame (`frameX/Y`, `frameWidth/Height`) = visible crop viewport; `x/y/width/height` kept in sync
+- Content (`contentOffsetX/Y`, `contentWidth/Height`) = bitmap floating inside frame
+- `naturalWidth/naturalHeight` = intrinsic bitmap dims, set at drop time, never changes
+- `contentEditMode: boolean` — false = frame transformer (blue); true = content mode (orange #ff7043)
 - Transformer is always a sibling of the Group, never inside it; Rect (not Group) is the transform target in frame mode
-- **Global `resizeMode`** in store (`'advanced' | 'auto'`), toggled via Toolbar crop/auto-fill icons:
-  - `'advanced'` (default): frame resize crops — content stays at its canvas position
-  - `'auto'`: frame resize cover-fits (fills) content to new frame, centered — CMD+drag and pure rotation still override
+- `resizeMode` in store (`'advanced'|'auto'`): advanced = frame resize crops; auto = cover-fits content to new frame
 
-**Multi-Select**
-- `selectedId` — drives Properties Panel (single-object props)
-- `selectedIds[]` — drives group transformer, align/distribute, and multi-select highlight
-- `anchorId` — reference object for alignment; objects align TO its bbox when set; shows gold `#f5a623` border
-- `setSelected(id)` sets both; `addToSelection(id)` (shift+click) appends to `selectedIds`; clicking an already-selected object in multi-select mode promotes it to `anchorId`
-- When `selectedIds.length > 1`: group `<Transformer>` in CarouselStage is active; individual node transformers and draggable are suppressed; marquee drag on empty canvas (ref: `isMarqueeActiveRef`) selects by overlap
-- `commitMultipleUpdates(patches)` / `removeMultipleObjects(ids)` — atomic batch ops with single history entry
+**Multi-Select:**
+- `selectedId` — Properties Panel; `selectedIds[]` — group transformer + align/distribute; `anchorId` — alignment reference (gold #f5a623 border)
+- `setSelected(id)` sets both; `addToSelection(id)` shift+click appends; clicking selected object → promotes to `anchorId`
+- When `selectedIds.length > 1`: group `<Transformer>` active; individual transformers/draggable suppressed; marquee on empty canvas selects by overlap
+- `commitMultipleUpdates(patches)` / `removeMultipleObjects(ids)` — atomic batch ops, single history entry
 
-**Shape/Ellipse convention**: store uses bounding-box top-left `(x, y)` for ALL types. Konva Ellipse uses center — convert at render time.
+**Snap** (`useSnapGuides.ts`): snaps to frame edges/centers + objects' edges/centers, 8px threshold.
+- Single: `computeSnap`/`computeSnapResize`; Group: `computeSnapGroup`/`computeSnapResizeGroup`
+- `boundBoxFunc` receives absolute screen coords — always convert absolute→logical before snapping, back to absolute before returning. `logicalThreshold = 8 / scale`.
+- `snapEnabled: boolean` in store; `snapRotation` + position/resize methods all gate on it; `rotationSnaps=[0,45,90,135,180,225,270,315]` on all Transformers
 
-**Text**: InDesign-style resize — handles resize the textbox, text reflows. Scale is never stored (`scaleX/Y` always 1 after transform).
+**Other invariants:**
+- Shape/Ellipse: store uses bounding-box top-left `(x,y)` for ALL types; Konva Ellipse uses center — convert at render time
+- Text: handles resize the textbox, text reflows; `scaleX/Y` always 1 after transform
+- Pen: `PathObject` with `anchors: AnchorPoint[]`; `CanvasPathNode.tsx` renders SVG; `anchorsToPathData()` exported for CarouselStage; transform bakes full affine matrix into anchors, resets node to identity
+- `keepRatio` on image Transformer mirrors `resizeMode`: auto → proportional default (Shift=free); advanced → free default (Shift=proportional); group transformer always `keepRatio={true}`
+- Shift+drag axis-locks to nearest 0/45/90/135° axis via `axisLock(dx,dy)` in `constants.ts`
+- `locked: boolean` on every object — no handles, no drag, no double-click
+- History: `past[]`/`future[]` snapshots; `commitUpdate` = push snapshot; load project resets history
+- Thumbnails: `useThumbnailStore`, HTML Canvas 2D, triggered on `past.length` changes + mount
+- `iconBtnStyle` shared helper in `src/ui/iconBtnStyle.ts`; `Tooltip` component in `src/ui/Tooltip.tsx`
+- Frame labels: HTML div strip absolutely positioned at `top: Math.max(4, panY - 22)` in CarouselStage (not Konva Text)
+- Masking: `MaskData.kind: 'pen'|'rect'|'ellipse'`; rect/ellipse masks use Konva Transformer in edit mode; `maskModeActive` in store (transient, not in history)
+- Save: `currentFilePath` in `useSaveStatusStore`; autosave forks on it; `recentFiles.json` tracks all opened/saved locations
 
-**Pen/Bezier tool (sprint 14)**: `PathObject` with `anchors: AnchorPoint[]`. `CanvasPathNode.tsx` renders SVG path from anchors. `anchorsToPathData()` exported from there for use in CarouselStage.
-
-**Snap**: `useSnapGuides.ts` — snaps to frame edges/centers and other objects' edges/centers. Threshold 8px. Rendered as Konva Lines (non-listening layer). Hook exposes `computeSnap`/`computeSnapResize` (single-object, exclude one ID) and `computeSnapGroup`/`computeSnapResizeGroup` (multi-select, exclude a set of IDs). CarouselStage calls the group variants during `handleGroupDragLive`, `boundBoxFunc`, and the manual `multiSelectDragStartRef` drag path.
-
-**Locking**: `locked: boolean` on every object. When locked: transformer shows no handles, drag disabled, double-click blocked.
-
-**History**: `past[]`/`future[]` snapshots in store. `commitUpdate` = push snapshot. Loading a project resets history entirely (not undoable).
-
-**Thumbnails**: separate Zustand store (`useThumbnailStore`), generated via HTML Canvas 2D, triggered only on `past.length` changes.
+**Photo Adjustments** (`src/canvas/adjustments/pipeline.ts`):
+- `PhotoAdjustments` on `ImageObject` (optional, backward-compatible); `DEFAULT_ADJUSTMENTS` exported from `src/types/canvas.ts`
+- `buildFilterPipeline(adj)` → `Array<(ImageData) => void>` Konva custom filters; returns `[]` when all values are 0 (zero cost for unedited images)
+- Exposure uses gamma decode → linear EV gain → re-encode (matches Lightroom's perceptual response, no harsh clipping). Contrast S-curve halved (`/200`). Highlights/shadows scaled 0.5×. Whites/blacks zones narrowed to top/bottom 25% of tonal range.
+- LUT cache: module-level `Map<string, Uint8ClampedArray>` keyed by `"param:value"` — LUTs rebuilt only when value changes
+- `CanvasImageNode` caches `imageRef` (not `innerGroupRef`) via `useEffect` whenever `filterPipeline` or image changes; mask cache on `innerGroupRef` is an independent layer — no conflict
+- `adjustmentsBypass: boolean` in store (transient, not in history) — `\` hold-to-compare (keydown=true, keyup=false); `Power` button in Adjustments header toggles persistently; sliders dim + `pointerEvents: none` when bypassed
+- Sliders: Lightroom Classic gradient tracks via `adjustments.css` (`::-webkit-slider-runnable-track`); double-click label, number input, or slider handle resets that param to 0; one undo step per drag (`updateObject` on drag, `commitUpdate` on mouseUp)
 
 ## Keyboard Shortcuts
-Handled in `useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op when focus is in input/textarea.
+`useKeyboardShortcuts.ts`, mounted once in CarouselStage. No-op in input/textarea.
+`V` select · `T` text · `R` shape · `P` pen · `L` line · `S` snap toggle · `\` bypass adjustments (hold) · `Esc` deselect · `⌘A` all · `⌘D` dupe · `⌘Z/⇧Z` undo/redo · `⌘]/[` layers · `⌘L` lock · arrows nudge · `⌫` delete
 
-`V` select · `T` text · `R` shape · `P` pen · `L` line · `S` snap toggle · `Escape` deselect · `⌘A` select all · `⌘D` duplicate · `⌘Z/⇧Z` undo/redo · `⌘]/[` layer order · `⌘L` lock · arrows nudge · `⌫` delete
+## Features Implemented (sprints 1–37)
+Canvas scaffold + Electron shell · Image frame/content model (InDesign crop/zoom) · Multi-select + snap guides + locking · Text tool + undo/redo · Context menu + layer thumbnails · Export panel (all/single/range) · Shape tool (rect/ellipse/line/arrow) + project load/save · Pen/bezier tool · Platform picker + aspect ratio (`PLATFORM_PRESETS`, `frameWidth` from store) · Frame resize modes (advanced/auto) · Trackpad pan/zoom · External photo editing (chokidar, Edit in X) · Save split-button (Save/Save As/Save a Copy) · Multi-select group transformer + marquee + anchor alignment · Image node multi-select bbox fix (frameRectRef not groupRef) · Rotation snapping + unified snap toggle · Pen anchor corner↔curve double-click toggle · Icon-first toolbar (lucide-react, 6 groups) + FrameSettingsPopover · Multi-object transform fixes (isGroupTransform, RAF re-wire) · Resize-snap coordinate space fix (absolute↔logical) · Masking system (pen/rect/ellipse, quick-mask Scissors button) · Mode-aware keepRatio · Shift+drag axis lock · UI compactness overhaul + FrameSettingsPopover · File save path fix (open-project returns filePath, autosave respects currentFilePath) · Pen path transforms + rotation center fix (rotateAroundCenter helper) · Photo adjustments slice 1 — 12 scalar sliders (exposure/contrast/highlights/shadows/whites/blacks/temperature/tint/saturation/vibrance/clarity/dehaze), gamma-correct pipeline, LUT cache, bypass toggle + `\` shortcut (issue #34)
 
-## Sprint History (completed)
-1–7: Project scaffold, canvas foundation, types, Electron shell
-8: Image frame/content model (InDesign-style crop/zoom)
-9: Multi-select, snap guides, object locking, canvas background/ratio
-10: Text tool, undo/redo, history
-11: Context menu, layer thumbnails, keyboard shortcuts, option+drag duplicate
-12: Export panel (all/single/range), image context menu actions, filename capture
-13: Shape tool (rect/ellipse/line/arrow), project load/save UI, text transform fix
-14: Pen/bezier tool, line tool endpoint fix
-19 (issue #5): Platform picker + aspect ratio — `Platform` type, `PLATFORM_PRESETS`, `frameWidth` store field, `setPlatform` action; `setRatio(r, w, h)` takes explicit dims; all `FRAME_WIDTH` constant uses replaced with live store value; Toolbar redesigned: platform `<select>` + dynamic per-platform ratio buttons + custom W×H inputs
-20 (issue #9): Frame resize modes — global `resizeMode: 'advanced' | 'auto'` in store; `'auto'` cover-fits content on frame resize (SCRL-style); crop/auto-fill icon toggle in Toolbar; `naturalWidth/naturalHeight` on `ImageObject`; "Reset Aspect Ratio" button in content-edit mode restores intrinsic proportions
-21 (issue #10): Trackpad navigation — `onWheel` in `CarouselStage.tsx` splits on `e.ctrlKey`: pinch gesture / Ctrl+scroll → zoom toward cursor; two-finger scroll / plain mouse wheel → pan via `deltaX`/`deltaY`
-22 (issue #11): External photo editing — Lightroom-style "Edit in X" workflow; `chokidar@3` watches a stable PNG per objectId in `externally-edited/` next to the `.zeroseams` file; `src/types/electron.d.ts` (new) types `window.electronAPI` globally, fixing pre-existing TS errors; 4 new IPC handlers in `src/electron/index.ts` (`get/set-external-editor`, `edit-in-external-app`, `stop-external-edit`); editor preference persisted in `userData/preferences.json`; `src/canvas/useExternalEdit.ts` (new) renderer-side hook that preserves `originalSrc` on first edit; `autosaveFilePath` added to `useSaveStatusStore` so the externally-edited folder always resolves next to the project file even without an explicit Save As; "Edit Externally" in context menu + "External Editor" section in Properties Panel with dynamic editor name, Change button, and watching-state indicator
-
-23 (issue #6): File management save button — replaced the single "Save As…" button on the right with a split-button on the left toolbar (next to Open): "Save" primary (overwrites `currentFilePath` or opens Save As dialog on first save) + "▾" dropdown with "Save As…" (always prompts, updates `currentFilePath`) and "Save a Copy…" (always prompts, does NOT update `currentFilePath`); new `save-project-copy` IPC handler + `saveProjectCopy` in preload + type; autosave and ⌘S/⌘⇧S shortcuts unchanged
-
-24 (issue #4): Rework multi-object selection — group transformer: single Konva `<Transformer>` in `CarouselStage` wires to all selected nodes (`nodeRefMapRef` + `nodeRef` prop on all 4 node components); resize/rotate/drag apply to full group (one undo step via `commitMultipleUpdates`); marquee rubber-band selection on empty canvas drag (`isMarqueeActiveRef`, `marqueeCurrentRef`), Shift+drag extends selection; reference object (`anchorId` in store): click selected object → gold `#f5a623` border, Layer Panel `★` button, Properties Panel "Reference" dropdown — `alignObjects` aligns TO anchor bbox when set; individual transformers and `draggable` suppressed when `selectedIds.length > 1`; keyboard shortcuts extended: Delete/arrow nudge/Cmd+D all act on full `selectedIds[]` (single undo step each); new store actions: `commitMultipleUpdates`, `removeMultipleObjects`, `setAnchor`
-
-25 (issue #19): Multi-select bounding box respects frame layer — `nodeRef` in `CanvasImageNode` changed from `groupRef` (clip Group; Konva's `getClientRect()` ignores the clip, returning full content extent) to `frameRectRef` (invisible Rect at exact frame bounds); `syncRef` prop + `syncRefMapRef` in `CarouselStage` expose `syncGroupOnTransform` so the visual clip group stays in sync during live group drag/transform; group transformer `onTransform`/`onDragMove` call each image's sync fn — multi-select snap-to-guides extended to group drag (both transformer drag and manual imperative drag paths) and group resize via `boundBoxFunc`; `useSnapGuides` hook extended with `computeSnapGroup`/`computeSnapResizeGroup` that exclude all selected IDs from snap targets
-
-26 (issue #12): Rotation snapping + unified snap toggle — `snapEnabled: boolean` + `toggleSnap()` in store (default on); `useSnapGuides` hook exposes `snapRotation` (gated on `snapEnabled`) + all 4 position/resize snap methods short-circuit when snap is off; rotation snap uses Konva's native `rotationSnaps={[0,45,90,135,180,225,270,315]}` + `rotationSnapTolerance={8}` props on all Transformer components (individual nodes + group) — live snap during drag with no position drift; `snapRotation` also applied in `onTransformEnd` / `handleGroupTransformEnd` as commit-time safety; `S` key toggles snap; Toolbar snap button (crosshair icon, `#0af` when on)
-
-27 (issue #3): Pen tool anchor conversion + larger handles — double-clicking an anchor in edit mode toggles corner ↔ curve: curve→corner zeros both handles; corner→curve computes tangent-direction handles (30px, using prev/next anchor direction, wraps correctly for closed paths); each toggle creates one undo entry via `commitUpdate`; anchor circle `radius 5→7`, handle circles `radius 4→6`
-
-28 (issue #22): Compact icon-first toolbar redesign — install `lucide-react`; all text-only tool buttons (Select/Text/Shape/Pen) replaced with icon-only buttons (`MousePointer2`, `Type`, `Square`/`Circle`/`Minus` dynamic on active sub-type, `PenTool`); Undo/Redo → `Undo2`/`Redo2`; Open → `FolderOpen` icon only; Save → `Save` icon + "Save" text; Export → `ImageDown` + "Export"; shared `iconBtnStyle(active, disabled)` helper replaces verbose per-button inline styles; toolbar height 48→40px; `title` attribute on every button with keyboard shortcut hints; snap/crop/autofill custom SVGs unchanged
-
-29 (issue #26): Fix multi-object transform — three bugs all rooted in `syncGroupOnTransform` being called with single-object logic during group transforms: (1) **No crop during group scale**: added `isGroupTransform` param to `syncGroupOnTransform`; when true, content follows frame proportionally per-axis (`scaleX = newWidth/frameWidth`) ignoring `resizeMode` — exposed via new `syncGroupRef` prop + `syncGroupRefMapRef` in CarouselStage; `handleGroupTransformLive`/`handleGroupDragLive` call group-sync fn with fallback to regular sync for non-image nodes; `<Rect onTransform>` guard (`if (isInMultiSelectMode) return`) prevents single-object crop branch from interfering during group transforms. (2) **Correct bounding box after transform**: `tr.nodes([])` detaches transformer at the very top of `handleGroupTransformEnd` before scale-baking so Konva cannot fight React's re-render of updated `width/height` props; `requestAnimationFrame(() => setGroupTransformKey(k+1))` defers transformer re-wire until after React propagates new node dimensions. (3) **Single-object proportional by default**: `keepRatio={true}` on the single-object `<Transformer>` — Shift toggles to free stretch via Konva's XOR. Playwright test suite added (`scripts/test-multiselect-transform.mjs`, 55 assertions across 8 scenarios); stores exposed on `window` for test access.
-
-30 (issue #2): Fix resize-handle snap to guides — root cause: Konva's `boundBoxFunc` provides `newBox` in **absolute screen coordinates** (via `getAbsoluteTransform()`), while `computeSnapResize` was using logical canvas coords for snap targets; at `CANVAS_SCALE=0.5` this caused snap to misfire on the wrong targets. Fix: each `boundBoxFunc` in `CanvasImageNode`, `CanvasShapeNode`, `CanvasTextNode`, and the group transformer in `CarouselStage` now converts `newBox` absolute→logical before snapping and converts the snapped result back to absolute before returning. Secondary fix: for corner handles with `keepRatio=true` (images, group transformer), `computeSnapResize` now accepts a `keepRatio?` boolean; when true it snaps only the axis with the closer target and derives the other from the original aspect ratio, preserving proportionality. Threshold fix: `logicalThreshold = 8 / scale` keeps the snap zone a consistent 8 screen-pixels at any zoom.
-
-31 (issue #28): Masking system overhaul — four fixes: (1) **External edit refresh**: `loadedImage` added to inner-group cache effect deps in `CanvasImageNode`; without it the Konva cache was rebuilt on `src` change (image still loading) but never again when `useImage` resolved asynchronously, permanently showing pre-edit pixels through the mask. (2) **Pen mask parity**: anchor circle radius 5→7, handle circles 4→6 in both the mask edit overlay (`CanvasImageNode`) and the draw preview (`CarouselStage`); double-click corner↔curve toggle added to edit overlay (same tangent-handle logic as `CanvasPathNode`). (3) **Quick-mask toolbar button**: `maskModeActive: boolean` (transient, not in history) + `setMaskModeActive` in store; auto-set `true` when an `ImageObject` is selected via `setSelected`; `Scissors` icon button appears in Toolbar left of Shape — active = cyan, click deselects + resets to select tool; shape/pen tool mousedown guards in `CarouselStage` intercept draw gestures and route to `enterMaskDrawMode` when active (interception placed before the `e.target !== stage` gate so clicks on the image are caught; `draggable` on `frameRectRef` also gated on `activeTool !== 'select'` to prevent accidental image drag). (4) **Properties Panel icon buttons**: `iconBtnStyle` extracted to `src/ui/iconBtnStyle.ts` (shared); mask tool-picker text buttons replaced with `PenTool/Square/Circle` icons; Edit Mask → `Pencil`; visibility toggle → `Eye`/`EyeOff`; remove → `Trash2`. Bonus: `MaskData.kind?: 'pen'|'rect'|'ellipse'` field stamped at creation time; rect/ellipse masks now use a Konva `<Transformer>` in edit mode (drag to move, handles to resize, scale baked on `onTransformEnd`, ellipse anchors recomputed from new bbox using K=0.5523 bezier approximation) rather than individual corner circles. `Tooltip` component (`src/ui/Tooltip.tsx`) adopted across Toolbar, PropertiesPanel, and LayerPanel.
-
-32 (issue #30): Mode-aware transform defaults — `keepRatio` on the image Transformer now mirrors `resizeMode`: `resizeMode === 'auto'` (autofill) → proportional default, Shift = free; `resizeMode === 'advanced'` (crop) → free default, Shift = proportional. Konva's native Shift-XOR handles the inversion; no extra key listener needed. The `keepRatio` arg passed to `computeSnapResize` in `boundBoxFunc` is updated to match, so snap axis-derivation aligns with the visual behavior. `cmdHeldRef`/Cmd+Shift frame+content proportional path and side-handle uni-directional behavior are unchanged. Shapes and text already use `keepRatio={false}`; group transformer stays `keepRatio={true}`.
-
-33 (issue #29): Shift+drag axis lock — holding Shift while dragging any object constrains movement to the nearest 0°/45°/90°/135° axis; releasing Shift resumes free drag. `axisLock(dx, dy)` helper added to `constants.ts` — projects a delta onto the nearest cardinal or diagonal axis. Applied in six drag paths: (1) **shapes** (`handleDragMove` for rect/ellipse, `handleLineDragMove` for line/arrow in `CanvasShapeNode`) using existing `dragStartXRef/Y`; (2) **text** (inline `onDragMove` in `CanvasTextNode`) using `dragStartXRef/Y`; (3) **image frame** (`handleFrameDragMove` in `CanvasImageNode`) using `dragStartFrameXRef/Y`; (4) **image content layer** (new `onDragStart`/`onDragMove` on the inner `KonvaImage` in `CanvasImageNode`) using `contentDragStartRef`; (5) **paths** (`handleDragMove` in `CanvasPathNode`) applied directly to the cumulative `node.x()/y()` delta; (6) **multi-select** — imperative drag path in `CarouselStage` `onMouseMove` applies lock to `dx/dy` via `e.evt.shiftKey`; group Transformer drag uses `dragBoundFunc` + `shiftHeldRef` (keydown/keyup) + `groupTransformerDragStartRef` (captured in `onDragStart`) to constrain the Transformer's own position. Feature is independent of snap (`snapEnabled`). Playwright test suite added (`scripts/test-axis-lock.mjs`, 24 assertions across 7 scenarios).
-
-34 (issue #31): UI compactness overhaul — **Toolbar**: reorganised into 6 groups (History | Selection | Create | Frame Settings | Frames | Export) with visual dividers; crop/autofill wrapped in a proper segmented switch; all unicode symbols replaced with Lucide icons. **FrameSettingsPopover** (`src/ui/FrameSettingsPopover.tsx`, new): platform picker, ratio presets, custom W×H inputs, canvas background colour — opened from a single "Frame Settings" toolbar button, clearing the entire platform/ratio block from the toolbar; imports `PLATFORM_PRESETS` from `useCanvasStore`. **PropertiesPanel**: X/Y/W/H fields removed for all object types; rotation and opacity become `<input type="range">` sliders (−360–360° and 0–100%); text alignment uses `AlignLeft`/`AlignCenter`/`AlignRight` Lucide icons; canvas background and per-frame colour sections removed. **LayerPanel**: row height 48→36px, thumbnails 44→36 (single) / 30→24 (dual); all emoji (⛓ 🔒 👁 ★) replaced with Lucide icons (`Link2`, `Lock`/`LockOpen`, `Eye`/`EyeOff`, `Star`) at white colour. **Canvas frame labels**: `FrameGuides` Konva Text labels removed; `CarouselStage` renders HTML frame-label + colour-swatch strip absolutely positioned at `top: Math.max(4, panY - 22)` so labels track the viewport when panning (eliminates `paddingTop` black bar); right-side `×` reset button clears per-frame colour override. **useThumbnailStore**: added mount-time generation so layer thumbnails populate immediately on project load without needing a canvas operation first.
-
-35 (issue #32): Fix file save path — two bugs fixed, both rooted in `open-project` not returning `filePath` to the renderer. (1) **open-project returns filePath**: `src/electron/index.ts` now includes `filePath: filePaths[0]` in the success response; `openProject()` return type in `src/types/electron.d.ts` updated to include `filePath?: string`. (2) **Toolbar stores path on open**: `handleOpen()` in `src/ui/Toolbar.tsx` replaces `setCurrentFilePath(null)` with `setCurrentFilePath(result.filePath ?? null)`, so cmd+S / Save button silently overwrite the opened file instead of always prompting Save As. (3) **Autosave respects opened file's location**: `src/canvas/useAutosave.ts` forks on `saveStore.currentFilePath` — if set, calls `saveProject(currentFilePath, json)` (overwrites in place); otherwise falls back to `autosaveProject(filename, json)` (app default dir); `setAutosaveFilePath` only called on the fallback path. (4) **Recent projects tracks all locations**: added `addRecentFile(filePath)` helper in `src/electron/index.ts` that maintains `userData/recentFiles.json` (deduped, capped at 30); called from all four save/open handlers (`open-project`, `autosave-project`, `save-project-as`, `save-project`); `list-recent-projects` now reads this tracked list and stats each file (filters missing), so files opened from Downloads or anywhere appear in recent — not just files in `~/Documents/ZeroSeams/`. (5) **`useSaveStatusStore` exposed for tests**: `src/main.tsx` dynamic import exposes `window.__saveStatusStore__`. Playwright test suite added (`scripts/test-save-path.mjs`, 22 assertions across 7 scenarios); tests use actual file mtime checks and main-process dialog mocking via `app.evaluate()` — avoids `contextIsolation` spy-injection limitations.
-
-36 (issues #25 + #33): Pen path transforms + rotation center fix — **Issue #25**: `CanvasPathNode` transformer fully unlocked — 8 resize handles + rotate handle enabled; `keepRatio=true` default, Shift toggles free stretch via Konva's native XOR; `handleTransformEnd` uses `node.getTransform()` to bake the full affine matrix (scale + rotation + translation) into anchor coordinates, then resets the node to `x=0,y=0,scale=1,rotation=0` so anchor coords remain the single source of truth (consistent with drag); `boundBoxFunc` follows the sprint 30 absolute↔logical coordinate-space conversion pattern from `CanvasShapeNode`; rotation snaps to 45° increments when snap is on. **Issue #33**: `rotateAroundCenter(x,y,w,h,oldRot,newRot)` helper added to `PropertiesPanel` — computes the canvas-space center from the current top-left + rotation, then derives the new top-left that keeps the center fixed; applied to text, rect/line/arrow shapes, and images (using `frameX/Y`, keeping `x/y` in sync); ellipses explicitly bypass the fix (Konva positions them at their center already); rotation sliders now call `commitUpdate` for proper history entries. Read-only `<span>` value display replaced with `<input type="number">` next to every rotation (−360–360°) and opacity (0–100%) slider across text, shape, and image sections — bidirectionally synced with the slider.
-
-## Upcoming (rough roadmap)
-- AI features: background removal UI, SAM segmentation, LaMa inpainting
-- Typography: font picker, Google Fonts integration
-- Templates / presets
-- Publish/share flow
-- Windows packaging + auto-update
+## Upcoming
+AI: background removal UI, SAM segmentation, LaMa inpainting · Font picker + Google Fonts · Templates/presets · Publish/share · Windows packaging + auto-update

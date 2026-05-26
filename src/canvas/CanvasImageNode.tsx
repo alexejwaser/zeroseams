@@ -9,6 +9,8 @@ import type { SnapGuide } from './useSnapGuides'
 import { anchorsToPathData } from './CanvasPathNode'
 import { CANVAS_SCALE, axisLock } from './constants'
 import { useViewportStore } from './useViewportStore'
+import { buildFilterPipeline } from './adjustments/pipeline'
+import { DEFAULT_ADJUSTMENTS } from '../types/canvas'
 
 interface CanvasImageNodeProps {
   obj: ImageObject
@@ -21,6 +23,7 @@ interface CanvasImageNodeProps {
 }
 
 export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef, syncRef, syncGroupRef }: CanvasImageNodeProps): React.ReactElement | null {
+  const adjustmentsBypass = useCanvasStore((s) => s.adjustmentsBypass)
   const [loadedImage] = useImage(obj.src)
 
   // Hold the last successfully loaded HTMLImageElement so the component never
@@ -87,6 +90,11 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
     [obj.frameWidth, obj.frameHeight],
   )
 
+
+  const filterPipeline = useMemo(
+    () => adjustmentsBypass ? [] : buildFilterPipeline(obj.adjustments ?? DEFAULT_ADJUSTMENTS),
+    [obj.adjustments, adjustmentsBypass],
+  )
   // Build the mask shape's sceneFunc whenever mask data or content dimensions change.
   // The function draws the mask into the inner group's cached canvas using destination-in
   // composite — white pixels = keep image, transparent = erase image.
@@ -144,6 +152,19 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
       inner.getLayer()?.batchDraw()
     }
   }, [obj.mask, obj.contentOffsetX, obj.contentOffsetY, obj.contentWidth, obj.contentHeight, obj.src, loadedImage])
+
+  // Manage the imageRef cache for filter rendering.
+  useEffect(() => {
+    const img = imageRef.current
+    if (!img) return
+    if (filterPipeline.length > 0) {
+      img.cache()
+      img.getLayer()?.batchDraw()
+    } else {
+      img.clearCache()
+      img.getLayer()?.batchDraw()
+    }
+  }, [filterPipeline, loadedImage, obj.contentWidth, obj.contentHeight, obj.src])
 
   // Wire the mask-edit Transformer to its target Rect when entering edit mode for rect/ellipse masks.
   useEffect(() => {
@@ -542,6 +563,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
               }
             }}
             onDragEnd={handleContentDragEnd}
+            filters={filterPipeline}
             onTransformEnd={handleContentTransformEnd}
           />
           {maskSceneFunc !== undefined && (

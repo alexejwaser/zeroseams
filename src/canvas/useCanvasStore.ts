@@ -66,6 +66,9 @@ interface CanvasState {
   setResizeMode: (mode: 'advanced' | 'auto') => void
   snapEnabled: boolean
   toggleSnap: () => void
+  adjustmentsBypass: boolean
+  setAdjustmentsBypass: (v: boolean) => void
+  toggleAdjustmentsBypass: () => void
   past: HistorySnapshot[]
   future: HistorySnapshot[]
   // Volatile UI state — NOT in HistorySnapshot
@@ -192,6 +195,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     activeTool: 'select',
     resizeMode: 'auto',
     snapEnabled: true,
+    adjustmentsBypass: false,
     past: [],
     future: [],
     contextMenu: null,
@@ -352,6 +356,8 @@ export const useCanvasStore = create<CanvasState>((set) => {
     setResizeMode: (mode) => set({ resizeMode: mode }),
 
     toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+    setAdjustmentsBypass: (v) => set({ adjustmentsBypass: v }),
+    toggleAdjustmentsBypass: () => set((s) => ({ adjustmentsBypass: !s.adjustmentsBypass })),
 
     reorderObjects: (fromId, toId, side) =>
       set((state) => {

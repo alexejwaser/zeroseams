@@ -6,7 +6,8 @@ import { useAIStore } from '@/ai'
 import { useExternalEdit } from '@/canvas/useExternalEdit'
 import { useSaveStatusStore } from './useSaveStatusStore'
 import type { BackgroundRemovalOperation } from '@/types/ai'
-import type { ImageObject, TextObject, ShapeObject, PathObject, FontStyle, MaskData } from '@/types/canvas'
+import type { ImageObject, TextObject, ShapeObject, PathObject, FontStyle, MaskData, PhotoAdjustments } from '@/types/canvas'
+import { DEFAULT_ADJUSTMENTS } from '@/types/canvas'
 import {
   getSelectionStyle,
   applyStyleToRange,
@@ -15,7 +16,8 @@ import {
 import { FontPicker } from './FontPicker'
 import Tooltip from './Tooltip'
 import { iconBtnStyle } from './iconBtnStyle'
-import { PenTool, Square, Circle, Trash2, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import { PenTool, Square, Circle, Trash2, Pencil, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight, Power } from 'lucide-react'
+import './adjustments.css'
 
 // ---------------------------------------------------------------------------
 // rotateAroundCenter — pure utility
@@ -869,6 +871,145 @@ function TextSection({
   )
 }
 
+
+// ---------------------------------------------------------------------------
+// AdjustmentsSection — Lightroom-style non-destructive photo adjustments
+// ---------------------------------------------------------------------------
+
+interface AdjustmentsSectionProps {
+  imgObj: ImageObject
+  selectedId: string
+  bypass: boolean
+  onToggleBypass: () => void
+  onUpdate: (adj: PhotoAdjustments) => void
+  onCommit: (adj: PhotoAdjustments) => void
+}
+
+const subGroupLabelStyle: React.CSSProperties = {
+  color: '#666',
+  fontSize: 10,
+  fontWeight: 'bold',
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase' as const,
+  marginTop: 10,
+  marginBottom: 4,
+}
+
+const TRACK_GRADIENT: Record<keyof PhotoAdjustments, string> = {
+  exposure:    'linear-gradient(to right, #111 0%, #fff 100%)',
+  contrast:    'linear-gradient(to right, #222 0%, #777 40%, #fff 100%)',
+  highlights:  'linear-gradient(to right, #666 0%, #fff 100%)',
+  shadows:     'linear-gradient(to right, #000 0%, #777 100%)',
+  whites:      'linear-gradient(to right, #aaa 0%, #fff 100%)',
+  blacks:      'linear-gradient(to right, #000 0%, #555 100%)',
+  temperature: 'linear-gradient(to right, #4b7fc7 0%, #c47820 100%)',
+  tint:        'linear-gradient(to right, #3a9a3a 0%, #c040b0 100%)',
+  saturation:  'linear-gradient(to right, #808080 0%, #cc3333 100%)',
+  vibrance:    'linear-gradient(to right, #808080 0%, #4488cc 100%)',
+  clarity:     'linear-gradient(to right, #444 0%, #ddd 100%)',
+  dehaze:      'linear-gradient(to right, #6080a8 0%, #e8c060 100%)',
+}
+
+function AdjustmentsSection({ imgObj, selectedId: _selectedId, bypass, onToggleBypass, onUpdate, onCommit }: AdjustmentsSectionProps): React.ReactElement {
+  const adj = imgObj.adjustments ?? DEFAULT_ADJUSTMENTS
+
+  function makeSlider(
+    label: string,
+    key: keyof PhotoAdjustments,
+    min: number,
+    max: number,
+    step: number,
+  ): React.ReactElement {
+    const value = adj[key]
+    const decimals = step < 1 ? 1 : 0
+    return (
+      <div key={key} style={{ display: 'flex', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+        <label
+          style={{ color: '#aaa', fontSize: 12, width: 80, flexShrink: 0, cursor: 'pointer' }}
+          onDoubleClick={() => onCommit({ ...adj, [key]: 0 })}
+        >
+          {label}
+        </label>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          className="adj-slider"
+          onChange={(e) => onUpdate({ ...adj, [key]: Number(e.target.value) })}
+          onMouseUp={(e) => onCommit({ ...adj, [key]: Number((e.target as HTMLInputElement).value) })}
+          onDoubleClick={() => onCommit({ ...adj, [key]: 0 })}
+          style={{ flex: 1, background: TRACK_GRADIENT[key] }}
+        />
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={value.toFixed(decimals)}
+          onChange={(e) => onUpdate({ ...adj, [key]: Number(e.target.value) })}
+          onBlur={(e) => onCommit({ ...adj, [key]: Number(e.target.value) })}
+          onDoubleClick={() => onCommit({ ...adj, [key]: 0 })}
+          style={numInputStyle(44)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid #333', paddingTop: 10, marginTop: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ ...sectionLabelStyle, marginBottom: 0 }}>Adjustments</div>
+        <button
+          style={{ ...iconBtnStyle(!bypass), width: 22, height: 22 }}
+          onClick={onToggleBypass}
+          title={bypass ? 'Show adjustments (\\)' : 'Bypass adjustments (\\)'}
+        >
+          <Power size={12} />
+        </button>
+      </div>
+
+      <div style={{ opacity: bypass ? 0.35 : 1, pointerEvents: bypass ? 'none' : 'auto' }}>
+      <div style={subGroupLabelStyle}>Light</div>
+      {makeSlider('Exposure', 'exposure', -5, 5, 0.1)}
+      {makeSlider('Contrast', 'contrast', -100, 100, 1)}
+      {makeSlider('Highlights', 'highlights', -100, 100, 1)}
+      {makeSlider('Shadows', 'shadows', -100, 100, 1)}
+      {makeSlider('Whites', 'whites', -100, 100, 1)}
+      {makeSlider('Blacks', 'blacks', -100, 100, 1)}
+
+      <div style={subGroupLabelStyle}>Color</div>
+      {makeSlider('Temperature', 'temperature', -100, 100, 1)}
+      {makeSlider('Tint', 'tint', -100, 100, 1)}
+      {makeSlider('Saturation', 'saturation', -100, 100, 1)}
+      {makeSlider('Vibrance', 'vibrance', -100, 100, 1)}
+
+      <div style={subGroupLabelStyle}>Detail</div>
+      {makeSlider('Clarity', 'clarity', -100, 100, 1)}
+      {makeSlider('Dehaze', 'dehaze', -100, 100, 1)}
+      </div>
+
+      <button
+        onClick={() => onCommit(DEFAULT_ADJUSTMENTS)}
+        style={{
+          marginTop: 8,
+          width: '100%',
+          fontSize: 11,
+          background: '#333',
+          color: '#aaa',
+          border: '1px solid #444',
+          borderRadius: 3,
+          padding: '3px 0',
+          cursor: 'pointer',
+        }}
+      >
+        Reset All
+      </button>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // PropertiesPanel (root export)
 // ---------------------------------------------------------------------------
@@ -879,6 +1020,8 @@ export function PropertiesPanel(): React.ReactElement {
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const updateObject = useCanvasStore((s) => s.updateObject)
   const commitUpdate = useCanvasStore((s) => s.commitUpdate)
+  const adjustmentsBypass = useCanvasStore((s) => s.adjustmentsBypass)
+  const toggleAdjustmentsBypass = useCanvasStore((s) => s.toggleAdjustmentsBypass)
   const enterMaskEditMode = useCanvasStore((s) => s.enterMaskEditMode)
   const maskDrawMode = useCanvasStore((s) => s.maskDrawMode)
   const enterMaskDrawMode = useCanvasStore((s) => s.enterMaskDrawMode)
@@ -967,7 +1110,7 @@ export function PropertiesPanel(): React.ReactElement {
       id="properties-panel"
       onMouseDown={handlePanelMouseDown}
       style={{
-        width: 260,
+        width: 300,
         flexShrink: 0,
         height: '100%',
         background: '#2a2a2a',
@@ -999,6 +1142,7 @@ export function PropertiesPanel(): React.ReactElement {
         style={{
           flex: 1,
           overflowY: 'auto',
+          overflowX: 'hidden',
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -1417,6 +1561,14 @@ export function PropertiesPanel(): React.ReactElement {
                     </>
                   )}
                 </div>
+                <AdjustmentsSection
+                  imgObj={imgObj}
+                  selectedId={selectedId!}
+                  bypass={adjustmentsBypass}
+                  onToggleBypass={toggleAdjustmentsBypass}
+                  onUpdate={(adj) => updateObject(selectedId!, { adjustments: adj })}
+                  onCommit={(adj) => commitUpdate(selectedId!, { adjustments: adj })}
+                />
               </div>
             )
           }

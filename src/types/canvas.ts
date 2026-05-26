@@ -72,6 +72,9 @@ export interface ImageObject extends BaseCanvasObject {
 
   // --- Vector mask ---
   mask?: MaskData
+
+  // --- Photo adjustments (non-destructive, applied via Konva filter pipeline) ---
+  adjustments?: PhotoAdjustments
 }
 
 /** Closed bezier path that clips the visible area of an image. Anchors are in content space. */
@@ -87,6 +90,32 @@ export interface MaskData {
   /** How the mask was drawn — determines edit UI (rect/ellipse → Transformer; pen → anchor circles) */
   kind?: 'pen' | 'rect' | 'ellipse'
 }
+
+/** Lightroom-style non-destructive scalar adjustments for image objects. */
+export interface PhotoAdjustments {
+  // Light
+  exposure: number      // –5 … +5, default 0
+  contrast: number      // –100 … +100, default 0
+  highlights: number    // –100 … +100, default 0
+  shadows: number       // –100 … +100, default 0
+  whites: number        // –100 … +100, default 0
+  blacks: number        // –100 … +100, default 0
+  // Color
+  temperature: number   // –100 … +100, default 0 (relative shift)
+  tint: number          // –100 … +100, default 0
+  saturation: number    // –100 … +100, default 0
+  vibrance: number      // –100 … +100, default 0
+  // Detail
+  clarity: number       // –100 … +100, default 0
+  dehaze: number        // –100 … +100, default 0
+}
+
+export const DEFAULT_ADJUSTMENTS: PhotoAdjustments = {
+  exposure: 0, contrast: 0, highlights: 0, shadows: 0,
+  whites: 0, blacks: 0, temperature: 0, tint: 0,
+  saturation: 0, vibrance: 0, clarity: 0, dehaze: 0,
+}
+
 
 export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold italic'
 

@@ -48,6 +48,7 @@ export function useKeyboardShortcuts(): void {
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
   const toggleSnap = useCanvasStore((s) => s.toggleSnap)
+  const setAdjustmentsBypass = useCanvasStore((s) => s.setAdjustmentsBypass)
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
@@ -80,6 +81,7 @@ export function useKeyboardShortcuts(): void {
           return
         }
         if (e.key === 's') { toggleSnap(); return }
+        if (e.key === '\\') { setAdjustmentsBypass(true); return }
       }
 
       if (e.key === 'Escape') {
@@ -298,8 +300,16 @@ export function useKeyboardShortcuts(): void {
       }
     }
 
+    function handleKeyUp(e: KeyboardEvent): void {
+      if (e.key === '\\') setAdjustmentsBypass(false)
+    }
+
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
   }, [
     setActiveTool,
     setSelected,
@@ -321,5 +331,6 @@ export function useKeyboardShortcuts(): void {
     undo,
     redo,
     toggleSnap,
+    setAdjustmentsBypass,
   ])
 }
