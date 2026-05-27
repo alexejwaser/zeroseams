@@ -63,7 +63,7 @@ Electron + React + TypeScript · Konva.js/react-konva · Zustand · @imgly/backg
 - Shape/Ellipse: store uses bounding-box top-left `(x,y)` for ALL types; Konva Ellipse uses center — convert at render time
 - Text: handles resize the textbox, text reflows; `scaleX/Y` always 1 after transform
 - Pen: `PathObject` with `anchors: AnchorPoint[]`; `CanvasPathNode.tsx` renders SVG; `anchorsToPathData()` exported for CarouselStage; transform bakes full affine matrix into anchors, resets node to identity
-- `keepRatio` on image Transformer mirrors `resizeMode`: auto → proportional default (Shift=free); advanced → free default (Shift=proportional); group transformer always `keepRatio={true}`
+- Image Transformer always `keepRatio={false}` — both modes allow free frame resize; the difference is content reaction: auto = cover-fill, advanced = crop. Group transformer always `keepRatio={true}`
 - Shift+drag axis-locks to nearest 0/45/90/135° axis via `axisLock(dx,dy)` in `constants.ts`
 - `locked: boolean` on every object — no handles, no drag, no double-click
 - History: `past[]`/`future[]` snapshots; `commitUpdate` = push snapshot; load project resets history

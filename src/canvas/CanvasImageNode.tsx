@@ -778,9 +778,7 @@ function CanvasImageNodeInner({ id, obj, onGuidesChange, nodeRef, syncRef, syncG
         )
       })()}
 
-      {/* Invisible frame rect — sole interaction/transform target in frame mode.
-          keepRatio mirrors resizeMode: auto=proportional default, advanced=free default.
-          Shift XOR inverts the default in both modes (Konva native). */}
+      {/* Invisible frame rect — sole interaction/transform target in frame mode. */}
       <Rect
         ref={frameRectRef}
         x={obj.frameX}
@@ -846,8 +844,7 @@ function CanvasImageNodeInner({ id, obj, onGuidesChange, nodeRef, syncRef, syncG
 
       <Transformer
         ref={transformerRef}
-        keepRatio={resizeMode === 'auto'}
-        shiftBehavior={resizeMode === 'auto' ? 'inverted' : 'default'}
+        keepRatio={false}
         rotationSnaps={snapEnabled ? [0, 45, 90, 135, 180, 225, 270, 315] : []}
         rotationSnapTolerance={8}
         boundBoxFunc={(oldBox, newBox) => {
@@ -880,7 +877,6 @@ function CanvasImageNodeInner({ id, obj, onGuidesChange, nodeRef, syncRef, syncG
             anchor,
             obj.id,
             logicalThreshold,
-            resizeMode === 'auto',
           )
           const snapped = {
             x: snappedLogical.x * scale + panX,
