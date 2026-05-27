@@ -1448,7 +1448,20 @@ export function CarouselStage(): React.ReactElement {
           })()}
         </Layer>
 
-        {/* Layer 3: snap guide lines (non-listening) */}
+        {/* Layer 3: frame divider lines — always on top of all media */}
+        <Layer name="frame-dividers" listening={false}>
+          {Array.from({ length: frameCount - 1 }, (_, i) => {
+            const x = (i + 1) * frameWidth
+            return (
+              <React.Fragment key={`divider-${i}`}>
+                <KonvaLine points={[x, 0, x, frameHeight]} stroke="rgba(0,0,0,0.45)" strokeWidth={3} perfectDrawEnabled={false} />
+                <KonvaLine points={[x, 0, x, frameHeight]} stroke="rgba(255,255,255,0.9)" strokeWidth={1} perfectDrawEnabled={false} />
+              </React.Fragment>
+            )
+          })}
+        </Layer>
+
+        {/* Layer 4: snap guide lines (non-listening) */}
         <Layer name="snap-guides" listening={false}>
           <SnapGuides
             guides={activeGuides}
