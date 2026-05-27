@@ -33,6 +33,9 @@ export interface BaseCanvasObject {
 
   // --- Metadata ---
   name?: string
+
+  // --- Layer effects (non-destructive, applied via effects framework) ---
+  effects?: LayerEffect[]
 }
 
 export interface ImageObject extends BaseCanvasObject {
@@ -116,6 +119,13 @@ export const DEFAULT_ADJUSTMENTS: PhotoAdjustments = {
   saturation: 0, vibrance: 0, clarity: 0, dehaze: 0,
 }
 
+/** A single non-destructive layer effect applied via the effects framework. */
+export interface LayerEffect {
+  id: string
+  type: string
+  enabled: boolean
+  params: Record<string, number | string | boolean>
+}
 
 export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold italic'
 

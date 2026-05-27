@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useMemo } from 'react'
 import { Text as KonvaText, Rect, Transformer } from 'react-konva'
 import type Konva from 'konva'
 import type { TextObject, TextSpan, CanvasObject } from '@/types/canvas'
@@ -8,6 +8,7 @@ import { useViewportStore } from './useViewportStore'
 import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { spanText, resolveSpanStyle, fontStyleToCSS } from './textSpans'
+import { buildEffectFilters } from './effects/buildEffectFilters'
 
 interface CanvasTextNodeProps {
   id: string
@@ -96,12 +97,26 @@ function CanvasTextNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasTextNod
   const dragStartYRef = useRef(0)
   const pendingDuplicateRef = useRef(false)
 
+  const effectFilters = useMemo(() => buildEffectFilters(obj.effects), [obj.effects])
+
   // Sync nodeRef so CarouselStage group transformer can attach to this Konva node
   useEffect(() => {
     if (nodeRef) {
       (nodeRef as React.MutableRefObject<Konva.Node | null>).current = textRef.current
     }
   })
+
+  useEffect(() => {
+    const node = textRef.current
+    if (!node) return
+    if (effectFilters.length > 0) {
+      node.cache()
+      node.getLayer()?.batchDraw()
+    } else {
+      node.clearCache()
+      node.getLayer()?.batchDraw()
+    }
+  }, [effectFilters])
 
   // Wire transformer when selected; suppress when group transformer is active
   useEffect(() => {
@@ -550,6 +565,7 @@ function CanvasTextNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasTextNod
         letterSpacing={obj.letterSpacing}
         lineHeight={obj.lineHeight}
         wrap="word"
+        filters={effectFilters}
         draggable={!obj.locked && !isInMultiSelectMode}
         onClick={(e) => {
           if (e.evt.shiftKey) {

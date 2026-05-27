@@ -11,6 +11,7 @@ import { CANVAS_SCALE, axisLock } from './constants'
 import { useViewportStore } from './useViewportStore'
 import { buildFilterPipeline } from './adjustments/pipeline'
 import { DEFAULT_ADJUSTMENTS } from '../types/canvas'
+import { buildEffectFilters } from './effects/buildEffectFilters'
 
 interface CanvasImageNodeProps {
   id: string
@@ -98,6 +99,14 @@ function CanvasImageNodeInner({ id, obj, onGuidesChange, nodeRef, syncRef, syncG
     () => adjustmentsBypass ? [] : buildFilterPipeline(obj.adjustments ?? DEFAULT_ADJUSTMENTS),
     [obj.adjustments, adjustmentsBypass],
   )
+  const effectFilters = useMemo(
+    () => buildEffectFilters(obj.effects),
+    [obj.effects],
+  )
+  const allFilters = useMemo(
+    () => [...filterPipeline, ...effectFilters],
+    [filterPipeline, effectFilters],
+  )
   // Build the mask shape's sceneFunc whenever mask data or content dimensions change.
   // The function draws the mask into the inner group's cached canvas using destination-in
   // composite — white pixels = keep image, transparent = erase image.
@@ -160,14 +169,14 @@ function CanvasImageNodeInner({ id, obj, onGuidesChange, nodeRef, syncRef, syncG
   useEffect(() => {
     const img = imageRef.current
     if (!img) return
-    if (filterPipeline.length > 0) {
+    if (allFilters.length > 0) {
       img.cache()
       img.getLayer()?.batchDraw()
     } else {
       img.clearCache()
       img.getLayer()?.batchDraw()
     }
-  }, [filterPipeline, loadedImage, obj.contentWidth, obj.contentHeight, obj.src])
+  }, [allFilters, loadedImage, obj.contentWidth, obj.contentHeight, obj.src])
 
   // Wire the mask-edit Transformer to its target Rect when entering edit mode for rect/ellipse masks.
   useEffect(() => {
@@ -566,7 +575,7 @@ function CanvasImageNodeInner({ id, obj, onGuidesChange, nodeRef, syncRef, syncG
               }
             }}
             onDragEnd={handleContentDragEnd}
-            filters={filterPipeline}
+            filters={allFilters}
             onTransformEnd={handleContentTransformEnd}
           />
           {maskSceneFunc !== undefined && (

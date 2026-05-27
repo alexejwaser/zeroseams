@@ -18,6 +18,7 @@ import { useImageDrop } from './useImageDrop'
 import { useAutosave } from './useAutosave'
 import { useKeyboardShortcuts } from './useKeyboardShortcuts'
 import { useThumbnailGenerator } from './useThumbnailStore'
+import '@/canvas/effects'
 export { exportFrames } from './exportFrames'
 
 // Module-level mutable reference so external callers can access the stage

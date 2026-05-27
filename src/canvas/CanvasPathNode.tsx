@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useMemo } from 'react'
 import {
   Path as KonvaPath,
   Circle as KonvaCircle,
@@ -12,6 +12,7 @@ import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { CANVAS_SCALE, axisLock } from './constants'
 import { useViewportStore } from './useViewportStore'
+import { buildEffectFilters } from './effects/buildEffectFilters'
 
 // ---------------------------------------------------------------------------
 // Path utilities — exported for use in CarouselStage pen tool
@@ -146,12 +147,26 @@ function CanvasPathNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasPathNod
     }
   }, [])
 
+  const effectFilters = useMemo(() => buildEffectFilters(obj.effects), [obj.effects])
+
   // Sync nodeRef so CarouselStage group transformer can attach to this Konva node
   useEffect(() => {
     if (nodeRef) {
       (nodeRef as React.MutableRefObject<Konva.Node | null>).current = pathRef.current
     }
   })
+
+  useEffect(() => {
+    const node = pathRef.current
+    if (!node) return
+    if (effectFilters.length > 0) {
+      node.cache()
+      node.getLayer()?.batchDraw()
+    } else {
+      node.clearCache()
+      node.getLayer()?.batchDraw()
+    }
+  }, [effectFilters])
 
   // Wire transformer — full resize + rotation; suppress in multi-select mode
   useEffect(() => {
@@ -414,6 +429,7 @@ function CanvasPathNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasPathNod
           strokeScaleEnabled={false}
           opacity={obj.opacity}
           perfectDrawEnabled={false}
+          filters={effectFilters}
           draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
           onTap={() => useCanvasStore.getState().setSelected(id)}
@@ -471,6 +487,7 @@ function CanvasPathNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasPathNod
         strokeScaleEnabled={false}
         opacity={obj.opacity}
         perfectDrawEnabled={false}
+        filters={effectFilters}
         draggable={!obj.locked}
         onClick={handleClick}
         onDragStart={handleDragStart}

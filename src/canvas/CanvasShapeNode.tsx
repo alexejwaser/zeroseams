@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useMemo } from 'react'
 import {
   Rect as KonvaRect,
   Ellipse as KonvaEllipse,
@@ -14,6 +14,7 @@ import { useSnapGuides } from './useSnapGuides'
 import type { SnapGuide } from './useSnapGuides'
 import { CANVAS_SCALE, axisLock } from './constants'
 import { useViewportStore } from './useViewportStore'
+import { buildEffectFilters } from './effects/buildEffectFilters'
 
 interface CanvasShapeNodeProps {
   id: string
@@ -51,12 +52,26 @@ function CanvasShapeNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasShapeN
   const pendingDuplicateRef = useRef(false)
   const lineDragOriginRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
+  const effectFilters = useMemo(() => buildEffectFilters(obj.effects), [obj.effects])
+
   // Sync nodeRef so CarouselStage group transformer can attach to this Konva node
   useEffect(() => {
     if (nodeRef) {
       (nodeRef as React.MutableRefObject<Konva.Node | null>).current = shapeRef.current
     }
   })
+
+  useEffect(() => {
+    const node = shapeRef.current
+    if (!node) return
+    if (effectFilters.length > 0) {
+      node.cache()
+      node.getLayer()?.batchDraw()
+    } else {
+      node.clearCache()
+      node.getLayer()?.batchDraw()
+    }
+  }, [effectFilters])
 
   // Wire transformer when selected/locked state changes; suppress when group transformer is active
   useEffect(() => {
@@ -369,6 +384,7 @@ function CanvasShapeNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasShapeN
           opacity={obj.opacity}
           rotation={obj.rotation}
           perfectDrawEnabled={false}
+          filters={effectFilters}
           draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
           onTap={() => useCanvasStore.getState().setSelected(id)}
@@ -395,6 +411,7 @@ function CanvasShapeNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasShapeN
           opacity={obj.opacity}
           rotation={obj.rotation}
           perfectDrawEnabled={false}
+          filters={effectFilters}
           draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
           onTap={() => useCanvasStore.getState().setSelected(id)}
