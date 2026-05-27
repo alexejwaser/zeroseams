@@ -13,16 +13,19 @@ import { buildFilterPipeline } from './adjustments/pipeline'
 import { DEFAULT_ADJUSTMENTS } from '../types/canvas'
 
 interface CanvasImageNodeProps {
-  obj: ImageObject
-  isSelected: boolean
-  onSelect: () => void
+  id: string
   onGuidesChange: (guides: SnapGuide[]) => void
   nodeRef?: React.RefObject<Konva.Node>
   syncRef?: React.MutableRefObject<(() => void) | null>
   syncGroupRef?: React.MutableRefObject<(() => void) | null>
 }
 
-export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef, syncRef, syncGroupRef }: CanvasImageNodeProps): React.ReactElement | null {
+interface CanvasImageNodeInnerProps extends CanvasImageNodeProps {
+  obj: ImageObject
+}
+
+function CanvasImageNodeInner({ id, obj, onGuidesChange, nodeRef, syncRef, syncGroupRef }: CanvasImageNodeInnerProps): React.ReactElement | null {
+  const isSelected = useCanvasStore((s) => s.selectedId === id)
   const adjustmentsBypass = useCanvasStore((s) => s.adjustmentsBypass)
   const [loadedImage] = useImage(obj.src)
 
@@ -64,7 +67,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const updateObject = useCanvasStore((s) => s.updateObject)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const maskDrawMode = useCanvasStore((s) => s.maskDrawMode)
-  const isDrawTarget = maskDrawMode?.id === obj.id
+  const isDrawTarget = maskDrawMode?.id === id
   const maskModeActive = useCanvasStore((s) => s.maskModeActive)
   const activeTool = useCanvasStore((s) => s.activeTool)
   const addToSelection = useCanvasStore((s) => s.addToSelection)
@@ -76,7 +79,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const { zoom, panX, panY } = useViewportStore((s) => ({ zoom: s.zoom, panX: s.panX, panY: s.panY }))
 
   const isInMultiSelectMode = selectedIds.length > 1
-  const isAnchor = anchorId === obj.id
+  const isAnchor = anchorId === id
   const { computeSnap, computeSnapResize, snapRotation } = useSnapGuides()
   const snapEnabled = useCanvasStore((s) => s.snapEnabled)
 
@@ -548,8 +551,8 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
             width={obj.contentWidth}
             height={obj.contentHeight}
             draggable={obj.contentEditMode && !obj.locked}
-            onClick={() => { if (obj.contentEditMode) onSelect() }}
-            onTap={() => { if (obj.contentEditMode) onSelect() }}
+            onClick={() => { if (obj.contentEditMode) useCanvasStore.getState().setSelected(id) }}
+            onTap={() => { if (obj.contentEditMode) useCanvasStore.getState().setSelected(id) }}
             onDragStart={() => {
               contentDragStartRef.current = { x: obj.contentOffsetX, y: obj.contentOffsetY }
             }}
@@ -803,11 +806,11 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
               }
               setAnchor(anchorId === obj.id ? null : obj.id)
             } else {
-              onSelect()
+              useCanvasStore.getState().setSelected(id)
             }
           }
         }}
-        onTap={() => { if (!obj.contentEditMode && !obj.maskEditMode) onSelect() }}
+        onTap={() => { if (!obj.contentEditMode && !obj.maskEditMode) useCanvasStore.getState().setSelected(id) }}
         onDblClick={handleDblClick}
         onDblTap={handleDblClick}
         onDragStart={() => {
@@ -827,7 +830,7 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
         onContextMenu={(e) => {
           e.evt.preventDefault()
           e.cancelBubble = true
-          if (!isSelected) onSelect()
+          if (!isSelected) useCanvasStore.getState().setSelected(id)
           setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: obj.id })
         }}
       />
@@ -883,3 +886,11 @@ export function CanvasImageNode({ obj, isSelected, onSelect, onGuidesChange, nod
     </>
   )
 }
+
+function CanvasImageNodeOuter(props: CanvasImageNodeProps): React.ReactElement | null {
+  const obj = useCanvasStore((s) => s.objects[props.id] as ImageObject | undefined)
+  if (!obj || !obj.visible) return null
+  return <CanvasImageNodeInner {...props} obj={obj} />
+}
+
+export const CanvasImageNode = React.memo(CanvasImageNodeOuter)

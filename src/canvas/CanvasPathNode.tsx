@@ -102,14 +102,17 @@ export function computePathBBox(anchors: AnchorPoint[]): { x: number; y: number;
 // ---------------------------------------------------------------------------
 
 interface CanvasPathNodeProps {
-  obj: PathObject
-  isSelected: boolean
-  onSelect: () => void
+  id: string
   onGuidesChange: (guides: SnapGuide[]) => void
   nodeRef?: React.RefObject<Konva.Node>
 }
 
-export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasPathNodeProps): React.ReactElement {
+interface CanvasPathNodeInnerProps extends CanvasPathNodeProps {
+  obj: PathObject
+}
+
+function CanvasPathNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasPathNodeInnerProps): React.ReactElement {
+  const isSelected = useCanvasStore((s) => s.selectedId === id)
   const pathRef = useRef<Konva.Path>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
 
@@ -121,7 +124,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
   const setAnchor = useCanvasStore((s) => s.setAnchor)
 
   const isInMultiSelectMode = selectedIds.length > 1
-  const isAnchor = anchorId === obj.id
+  const isAnchor = anchorId === id
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const { computeSnapResize } = useSnapGuides()
   const snapEnabled = useCanvasStore((s) => s.snapEnabled)
@@ -181,7 +184,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
     } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
       setAnchor(anchorId === obj.id ? null : obj.id)
     } else {
-      onSelect()
+      useCanvasStore.getState().setSelected(id)
     }
   }
 
@@ -193,7 +196,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
   function handleContextMenu(e: Konva.KonvaEventObject<PointerEvent>): void {
     e.evt.preventDefault()
     e.cancelBubble = true
-    if (!isSelected) onSelect()
+    if (!isSelected) useCanvasStore.getState().setSelected(id)
     setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: obj.id })
   }
 
@@ -413,7 +416,7 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
           perfectDrawEnabled={false}
           draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
-          onTap={onSelect}
+          onTap={() => useCanvasStore.getState().setSelected(id)}
           onDblClick={handleDblClick}
           onDragStart={handleDragStart}
           onDragMove={handleDragMove}
@@ -528,3 +531,11 @@ export function CanvasPathNode({ obj, isSelected, onSelect, onGuidesChange, node
     </>
   )
 }
+
+function CanvasPathNodeOuter(props: CanvasPathNodeProps): React.ReactElement | null {
+  const obj = useCanvasStore((s) => s.objects[props.id] as PathObject | undefined)
+  if (!obj || !obj.visible) return null
+  return <CanvasPathNodeInner {...props} obj={obj} />
+}
+
+export const CanvasPathNode = React.memo(CanvasPathNodeOuter)

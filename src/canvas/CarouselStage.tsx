@@ -31,7 +31,6 @@ export function getStageInstance(): Konva.Stage | null {
 export function CarouselStage(): React.ReactElement {
   const stageRef = useRef<Konva.Stage>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const objects = useCanvasStore((s) => s.objects)
   const objectOrder = useCanvasStore((s) => s.objectOrder)
   const selectedId = useCanvasStore((s) => s.selectedId)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
@@ -299,7 +298,7 @@ export function CarouselStage(): React.ReactElement {
   }
 
   function toContentSpace(cx: number, cy: number, imgId: string): { x: number; y: number } {
-    const img = objects[imgId] as ImageObject | undefined
+    const img = useCanvasStore.getState().objects[imgId] as ImageObject | undefined
     if (!img) return { x: cx, y: cy }
     return { x: cx - img.frameX - img.contentOffsetX, y: cy - img.frameY - img.contentOffsetY }
   }
@@ -667,7 +666,7 @@ export function CarouselStage(): React.ReactElement {
 
           // --- Pen tool ---
           if (activeTool === 'pen') {
-            if (maskModeActive && selectedId && objects[selectedId]?.type === 'image') {
+            if (maskModeActive && selectedId && useCanvasStore.getState().objects[selectedId]?.type === 'image') {
               enterMaskDrawMode(selectedId, 'pen')
               return
             }
@@ -707,7 +706,7 @@ export function CarouselStage(): React.ReactElement {
 
           // Shape tool mask interception — must be before the stage-click gate so clicks
           // on the selected image are captured even though e.target !== stage.
-          if (activeTool === 'shape' && maskModeActive && selectedId && objects[selectedId]?.type === 'image' &&
+          if (activeTool === 'shape' && maskModeActive && selectedId && useCanvasStore.getState().objects[selectedId]?.type === 'image' &&
               (activeShapeKind === 'rect' || activeShapeKind === 'ellipse')) {
             const stage = e.target.getStage()
             const pos = stage?.getRelativePointerPosition()
@@ -1081,7 +1080,7 @@ export function CarouselStage(): React.ReactElement {
               currentPenPathIdRef.current = newId
             } else {
               // Subsequent anchor — get current path from store and append
-              const currentPath = objects[pathId] as PathObject | undefined
+              const currentPath = useCanvasStore.getState().objects[pathId] as PathObject | undefined
               if (!currentPath) { currentPenPathIdRef.current = null; return }
 
               // Check: clicking near first anchor closes the path
@@ -1149,15 +1148,12 @@ export function CarouselStage(): React.ReactElement {
         {/* Layer 2: objects */}
         <Layer name="objects">
           {objectOrder.map((id) => {
-            const obj = objects[id]
-            if (!obj || !obj.visible) return null
-            if (obj.type === 'image') {
+            const type = useCanvasStore.getState().objects[id]?.type
+            if (type === 'image') {
               return (
                 <CanvasImageNode
                   key={id}
-                  obj={obj as ImageObject}
-                  isSelected={selectedId === id}
-                  onSelect={() => setSelected(id)}
+                  id={id}
                   onGuidesChange={setActiveGuides}
                   nodeRef={getOrCreateNodeRef(id)}
                   syncRef={getOrCreateSyncRef(id)}
@@ -1165,43 +1161,37 @@ export function CarouselStage(): React.ReactElement {
                 />
               )
             }
-            if (obj.type === 'text') {
+            if (type === 'text') {
               return (
                 <CanvasTextNode
                   key={id}
-                  obj={obj as TextObject}
-                  isSelected={selectedId === id}
-                  onSelect={() => setSelected(id)}
+                  id={id}
                   onGuidesChange={setActiveGuides}
                   nodeRef={getOrCreateNodeRef(id)}
                 />
               )
             }
-            if (obj.type === 'shape') {
+            if (type === 'shape') {
               return (
                 <CanvasShapeNode
                   key={id}
-                  obj={obj as ShapeObject}
-                  isSelected={selectedId === id}
-                  onSelect={() => { setSelected(id) }}
+                  id={id}
                   onGuidesChange={setActiveGuides}
                   nodeRef={getOrCreateNodeRef(id)}
                 />
               )
             }
-            if (obj.type === 'path') {
+            if (type === 'path') {
               return (
                 <CanvasPathNode
                   key={id}
-                  obj={obj as PathObject}
-                  isSelected={selectedId === id}
-                  onSelect={() => setSelected(id)}
+                  id={id}
                   onGuidesChange={setActiveGuides}
                   nodeRef={getOrCreateNodeRef(id)}
                 />
               )
             }
-            return null // other types TBD
+            return null
           })}
 
           {/* Group transformer — active when 2+ objects are selected */}
@@ -1383,7 +1373,7 @@ export function CarouselStage(): React.ReactElement {
           {/* Pen tool preview overlay */}
           {activeTool === 'pen' && penCursorPos && (() => {
             const pathId = currentPenPathIdRef.current
-            const currentPenPath = pathId ? (objects[pathId] as PathObject | undefined) : undefined
+            const currentPenPath = pathId ? (useCanvasStore.getState().objects[pathId] as PathObject | undefined) : undefined
             const penAnchors = currentPenPath?.anchors ?? []
             if (penAnchors.length === 0) return null
 

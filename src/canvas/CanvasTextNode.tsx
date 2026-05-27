@@ -10,11 +10,13 @@ import type { SnapGuide } from './useSnapGuides'
 import { spanText, resolveSpanStyle, fontStyleToCSS } from './textSpans'
 
 interface CanvasTextNodeProps {
-  obj: TextObject
-  isSelected: boolean
-  onSelect: () => void
+  id: string
   onGuidesChange: (guides: SnapGuide[]) => void
   nodeRef?: React.RefObject<Konva.Node>
+}
+
+interface CanvasTextNodeInnerProps extends CanvasTextNodeProps {
+  obj: TextObject
 }
 
 /**
@@ -59,7 +61,8 @@ function charIndexToDomOffset(div: HTMLDivElement, charIndex: number): { node: N
   return { node: div, offset: div.childNodes.length }
 }
 
-export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasTextNodeProps): React.ReactElement {
+function CanvasTextNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasTextNodeInnerProps): React.ReactElement {
+  const isSelected = useCanvasStore((s) => s.selectedId === id)
   const textRef = useRef<Konva.Text>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const editDivRef = useRef<HTMLDivElement | null>(null)
@@ -72,7 +75,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
   const setAnchor = useCanvasStore((s) => s.setAnchor)
 
   const isInMultiSelectMode = selectedIds.length > 1
-  const isAnchor = anchorId === obj.id
+  const isAnchor = anchorId === id
   const duplicateObjectAtOrigin = useCanvasStore((s) => s.duplicateObjectAtOrigin)
   const setContextMenu = useCanvasStore((s) => s.setContextMenu)
   const setTextEditing = useCanvasStore((s) => s.setTextEditing)
@@ -554,10 +557,10 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
           } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
             setAnchor(anchorId === obj.id ? null : obj.id)
           } else {
-            onSelect()
+            useCanvasStore.getState().setSelected(id)
           }
         }}
-        onTap={onSelect}
+        onTap={() => useCanvasStore.getState().setSelected(id)}
         onDblClick={handleDblClick}
         onDragStart={() => {
           dragStartXRef.current = obj.x
@@ -653,7 +656,7 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
         onContextMenu={(e) => {
           e.evt.preventDefault()
           e.cancelBubble = true
-          if (!isSelected) onSelect()
+          if (!isSelected) useCanvasStore.getState().setSelected(id)
           setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: obj.id })
         }}
       />
@@ -708,3 +711,11 @@ export function CanvasTextNode({ obj, isSelected, onSelect, onGuidesChange, node
     </>
   )
 }
+
+function CanvasTextNodeOuter(props: CanvasTextNodeProps): React.ReactElement | null {
+  const obj = useCanvasStore((s) => s.objects[props.id] as TextObject | undefined)
+  if (!obj || !obj.visible) return null
+  return <CanvasTextNodeInner {...props} obj={obj} />
+}
+
+export const CanvasTextNode = React.memo(CanvasTextNodeOuter)

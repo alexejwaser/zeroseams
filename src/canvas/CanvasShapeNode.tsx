@@ -16,14 +16,17 @@ import { CANVAS_SCALE, axisLock } from './constants'
 import { useViewportStore } from './useViewportStore'
 
 interface CanvasShapeNodeProps {
-  obj: ShapeObject
-  isSelected: boolean
-  onSelect: () => void
+  id: string
   onGuidesChange: (guides: SnapGuide[]) => void
   nodeRef?: React.RefObject<Konva.Node>
 }
 
-export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nodeRef }: CanvasShapeNodeProps): React.ReactElement {
+interface CanvasShapeNodeInnerProps extends CanvasShapeNodeProps {
+  obj: ShapeObject
+}
+
+function CanvasShapeNodeInner({ id, obj, onGuidesChange, nodeRef }: CanvasShapeNodeInnerProps): React.ReactElement {
+  const isSelected = useCanvasStore((s) => s.selectedId === id)
   const shapeRef = useRef<Konva.Shape>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const updateObject = useCanvasStore((s) => s.updateObject)
@@ -39,7 +42,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
   const { zoom, panX, panY } = useViewportStore((s) => ({ zoom: s.zoom, panX: s.panX, panY: s.panY }))
 
   const isInMultiSelectMode = selectedIds.length > 1
-  const isAnchor = anchorId === obj.id
+  const isAnchor = anchorId === id
   const pendingGuidesRef = useRef<SnapGuide[]>([])
 
   const altHeldRef = useRef(false)
@@ -145,7 +148,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
     } else if (isInMultiSelectMode && selectedIds.includes(obj.id)) {
       setAnchor(anchorId === obj.id ? null : obj.id)
     } else {
-      onSelect()
+      useCanvasStore.getState().setSelected(id)
     }
   }
 
@@ -322,7 +325,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
   function handleContextMenu(e: Konva.KonvaEventObject<PointerEvent>): void {
     e.evt.preventDefault()
     e.cancelBubble = true
-    if (!isSelected) onSelect()
+    if (!isSelected) useCanvasStore.getState().setSelected(id)
     setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, targetId: obj.id })
   }
 
@@ -368,7 +371,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
           perfectDrawEnabled={false}
           draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
-          onTap={onSelect}
+          onTap={() => useCanvasStore.getState().setSelected(id)}
           onDragStart={handleDragStart}
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
@@ -394,7 +397,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
           perfectDrawEnabled={false}
           draggable={!obj.locked && !isInMultiSelectMode}
           onClick={handleClick}
-          onTap={onSelect}
+          onTap={() => useCanvasStore.getState().setSelected(id)}
           onDragStart={handleDragStart}
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
@@ -422,7 +425,7 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
               listening={!obj.locked}
               draggable={!obj.locked && !isInMultiSelectMode}
               onClick={handleClick}
-              onTap={onSelect}
+              onTap={() => useCanvasStore.getState().setSelected(id)}
               onDragStart={handleLineDragStart}
               onDragMove={handleLineDragMove}
               onDragEnd={handleLineDragEnd}
@@ -532,3 +535,11 @@ export function CanvasShapeNode({ obj, isSelected, onSelect, onGuidesChange, nod
     </>
   )
 }
+
+function CanvasShapeNodeOuter(props: CanvasShapeNodeProps): React.ReactElement | null {
+  const obj = useCanvasStore((s) => s.objects[props.id] as ShapeObject | undefined)
+  if (!obj || !obj.visible) return null
+  return <CanvasShapeNodeInner {...props} obj={obj} />
+}
+
+export const CanvasShapeNode = React.memo(CanvasShapeNodeOuter)

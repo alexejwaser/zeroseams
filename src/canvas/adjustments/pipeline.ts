@@ -280,8 +280,16 @@ function makeDehazeFilter(dehaze: number): (imageData: ImageData) => void {
 // Public API
 // ---------------------------------------------------------------------------
 
+const pipelineCache = new Map<string, Array<(imageData: ImageData) => void>>()
+
+function adjFingerprint(adj: PhotoAdjustments): string {
+  return Object.values(adj).join(',')
+}
+
 export function buildFilterPipeline(adj: PhotoAdjustments): Array<(imageData: ImageData) => void> {
   if (isAllDefault(adj)) return []
+  const key = adjFingerprint(adj)
+  if (pipelineCache.has(key)) return pipelineCache.get(key)!
   const filters: Array<(imageData: ImageData) => void> = []
   if (adj.exposure !== 0)     filters.push(makeExposureFilter(adj.exposure))
   if (adj.contrast !== 0)     filters.push(makeContrastFilter(adj.contrast))
@@ -295,5 +303,6 @@ export function buildFilterPipeline(adj: PhotoAdjustments): Array<(imageData: Im
   if (adj.vibrance !== 0)     filters.push(makeVibranceFilter(adj.vibrance))
   if (adj.clarity !== 0)      filters.push(makeClarityFilter(adj.clarity))
   if (adj.dehaze !== 0)       filters.push(makeDehazeFilter(adj.dehaze))
+  pipelineCache.set(key, filters)
   return filters
 }
