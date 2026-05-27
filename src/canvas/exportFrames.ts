@@ -31,20 +31,26 @@ export async function exportFrames(
     n.opacity(userOpacity ?? 1)
   })
 
-  // 2. Hide frame guides (divider lines + labels)
+  // 2. Hide frame guides (background rects) and divider lines
   const guidesLayer = stage.findOne<Konva.Layer>('.guides')
   if (guidesLayer) guidesLayer.hide()
+  const dividersLayer = stage.findOne<Konva.Layer>('.frame-dividers')
+  if (dividersLayer) dividersLayer.hide()
 
-  // 3. Save current stage dimensions/scale and switch to full 1:1 resolution
+  // 3. Save current stage dimensions/scale/position and switch to full 1:1 resolution
   const origWidth = stage.width()
   const origHeight = stage.height()
   const origScaleX = stage.scaleX()
   const origScaleY = stage.scaleY()
+  const origX = stage.x()
+  const origY = stage.y()
 
   stage.width(frameCount * frameWidth)
   stage.height(frameHeight)
   stage.scaleX(1)
   stage.scaleY(1)
+  stage.x(0)
+  stage.y(0)
   stage.draw()
 
   const blobs: Blob[] = []
@@ -87,9 +93,12 @@ export async function exportFrames(
     stage.height(origHeight)
     stage.scaleX(origScaleX)
     stage.scaleY(origScaleY)
+    stage.x(origX)
+    stage.y(origY)
     stage.draw()
 
     if (guidesLayer) guidesLayer.show()
+    if (dividersLayer) dividersLayer.show()
     transformers.forEach((t) => t.show())
     textNodes.forEach((n) => n.opacity(0))
   }
